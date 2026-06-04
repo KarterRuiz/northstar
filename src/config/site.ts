@@ -1,5 +1,5 @@
 export const siteConfig = {
-  name: "Northstar",
+  name: "Northstar-SIS",
   shortName: "Northstar",
   tagline: "Student Growth & Records Platform",
   description:
