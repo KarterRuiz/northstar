@@ -25,7 +25,7 @@ const segmentTitle: Record<string, string> = {
   compliance: "Compliance",
   settings: "School settings",
   classes: "Classes",
-  teachers: "Teachers",
+  teachers: "Teachers & staff",
   "parent-requests": "Parent requests",
   actions: "Quick actions",
   observations: "Observations",

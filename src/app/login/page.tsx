@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { signInWithPassword, type SignInState } from "@/lib/auth/actions";
+import { loadStaffInviteLoginHint } from "@/features/admin/staff-directory/load-staff-invite-login-hint";
 import {
   Card,
   CardContent,
@@ -18,10 +19,11 @@ const initialSignInState: SignInState = { error: null };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; staff_invite?: string }>;
 }) {
   const params = await searchParams;
   const profileError = params.error === "profile";
+  const inviteHint = await loadStaffInviteLoginHint(params.staff_invite);
 
   return (
     <div className="bg-background flex min-h-svh flex-col items-center justify-center p-4">
@@ -33,6 +35,18 @@ export default async function LoginPage({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {inviteHint.ok ? (
+            <div
+              className="bg-muted/50 text-muted-foreground rounded-lg border px-3 py-2 text-sm"
+              role="status"
+            >
+              <p className="text-foreground font-medium">You have a pending invitation</p>
+              <p className="mt-1">
+                Sign in with <span className="text-foreground font-medium">{inviteHint.emailHint}</span>{" "}
+                ({inviteHint.fullName}) using your school password.
+              </p>
+            </div>
+          ) : null}
           {profileError ? (
             <p className="text-destructive text-sm">
               Your account has no valid role in{" "}

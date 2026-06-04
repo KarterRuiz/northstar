@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { isRole } from "@/config/roles";
 import { recordAuditEvent } from "@/lib/audit";
-import { getAdminActor } from "@/lib/auth/require-admin";
+import { getStaffDirectoryManagerActor } from "@/lib/auth/require-staff-directory-manager";
+import { staffDirectoryPath } from "@/features/admin/staff-directory/staff-directory-path";
 import { isStudentId } from "@/lib/students/uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -12,7 +13,9 @@ export type UpdateUserRoleState =
   | { ok: true; message?: string }
   | { ok: false; message: string };
 
-const STAFF_DIRECTORY_PATH = "/dashboard/admin/teachers";
+export type ToggleProfileActiveState =
+  | { ok: true; message?: string }
+  | { ok: false; message: string };
 
 async function countAdmins(): Promise<number> {
   const supabase = await createServerSupabaseClient();
@@ -29,9 +32,12 @@ export async function updateUserRoleAction(
   formData: FormData,
 ): Promise<UpdateUserRoleState> {
   const supabase = await createServerSupabaseClient();
-  const actor = await getAdminActor(supabase);
+  const actor = await getStaffDirectoryManagerActor(supabase);
   if (!actor) {
-    return { ok: false, message: "You must be signed in as an admin." };
+    return {
+      ok: false,
+      message: "You must be signed in with permission to manage staff.",
+    };
   }
 
   const profileIdRaw = formData.get("profileId");
@@ -67,17 +73,12 @@ export async function updateUserRoleAction(
     return { ok: true, message: "No change." };
   }
 
-  if (
-    profileId === actor.userId &&
-    oldRole === "admin" &&
-    newRole !== "admin"
-  ) {
+  if (oldRole === "admin" && newRole !== "admin") {
     const admins = await countAdmins();
     if (admins <= 1) {
       return {
         ok: false,
-        message:
-          "You are the only admin. Add another admin before changing your own role.",
+        message: "Cannot change the last remaining admin to a non-admin role.",
       };
     }
   }
@@ -101,6 +102,82 @@ export async function updateUserRoleAction(
     },
   });
 
-  revalidatePath(STAFF_DIRECTORY_PATH);
+  revalidatePath(staffDirectoryPath(actor.role));
   return { ok: true, message: "Role updated." };
+}
+
+export async function toggleProfileActiveAction(
+  _prev: ToggleProfileActiveState | undefined,
+  formData: FormData,
+): Promise<ToggleProfileActiveState> {
+  const supabase = await createServerSupabaseClient();
+  const actor = await getStaffDirectoryManagerActor(supabase);
+  if (!actor) {
+    return {
+      ok: false,
+      message: "You must be signed in with permission to manage staff.",
+    };
+  }
+
+  const profileIdRaw = formData.get("profileId");
+  const nextRaw = formData.get("nextActive");
+  if (typeof profileIdRaw !== "string" || typeof nextRaw !== "string") {
+    return { ok: false, message: "Missing profile or status." };
+  }
+
+  const profileId = profileIdRaw.trim();
+  if (!isStudentId(profileId)) {
+    return { ok: false, message: "Invalid profile id." };
+  }
+
+  const nextActive = nextRaw === "true" || nextRaw === "1";
+
+  if (profileId === actor.userId && !nextActive) {
+    return {
+      ok: false,
+      message: "You cannot deactivate your own account from the directory.",
+    };
+  }
+
+  const { data: target, error: readError } = await supabase
+    .from("profiles")
+    .select("id, is_active")
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (readError) {
+    return { ok: false, message: readError.message };
+  }
+  if (!target) {
+    return { ok: false, message: "Profile not found." };
+  }
+
+  if (target.is_active === nextActive) {
+    return { ok: true, message: "No change." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ is_active: nextActive })
+    .eq("id", profileId);
+
+  if (updateError) {
+    return { ok: false, message: updateError.message };
+  }
+
+  await recordAuditEvent({
+    action: "profile_status_changed",
+    actorUserId: actor.userId,
+    metadata: {
+      targetUserId: profileId,
+      oldActive: target.is_active,
+      newActive: nextActive,
+    },
+  });
+
+  revalidatePath(staffDirectoryPath(actor.role));
+  return {
+    ok: true,
+    message: nextActive ? "Access reactivated." : "Access deactivated.",
+  };
 }

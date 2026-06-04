@@ -24,7 +24,7 @@ export const fetchStaffInvitations = cache(
     const { data, error } = await supabase
       .from("staff_invitations")
       .select(
-        "id, email, full_name, role, status, invited_by, accepted_user_id, created_at, updated_at",
+        "id, email, full_name, first_name, last_name, role, status, invited_by, accepted_user_id, invite_token, expires_at, accepted_at, staff_note, pending_class_ids, created_at, updated_at",
       )
       .order("created_at", { ascending: false });
 
@@ -33,8 +33,13 @@ export const fetchStaffInvitations = cache(
     }
 
     const rows = [...(data ?? [])];
-    const rank = (s: string) =>
-      s === "pending" ? 0 : s === "accepted" ? 1 : s === "cancelled" ? 2 : 3;
+    const rank = (s: string) => {
+      if (s === "pending") return 0;
+      if (s === "accepted") return 1;
+      if (s === "expired") return 2;
+      if (s === "cancelled") return 3;
+      return 4;
+    };
     rows.sort((a, b) => {
       const d = rank(a.status) - rank(b.status);
       if (d !== 0) return d;

@@ -130,3 +130,13 @@ export function canViewSchoolSettings(role: Role): boolean {
 export function canEditSchoolSettings(role: Role): boolean {
   return isLeadershipAuditRole(role);
 }
+
+/** Staff directory, invitations, and role changes (`is_staff_directory_manager` in DB). */
+export function canManageStaffDirectory(role: Role | string): boolean {
+  return (
+    role === "admin" ||
+    role === "principal" ||
+    role === "vice_principal" ||
+    role === "registrar"
+  );
+}

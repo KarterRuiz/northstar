@@ -4,36 +4,58 @@ import { revalidatePath } from "next/cache";
 
 import { isRole } from "@/config/roles";
 import { recordAuditEvent } from "@/lib/audit";
-import { getAdminActor } from "@/lib/auth/require-admin";
+import { getStaffDirectoryManagerActor } from "@/lib/auth/require-staff-directory-manager";
+import { staffDirectoryPath } from "@/features/admin/staff-directory/staff-directory-path";
 import { profileFieldsFromStaffInvitation } from "@/lib/staff/profile-fields-from-invitation";
 import { isUuid } from "@/lib/students/uuid";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getAuthEmailRedirectToLogin } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-const STAFF_DIRECTORY_PATH = "/dashboard/admin/teachers";
-
 function messageForInviteUserByEmailError(rawMessage: string | undefined): string {
   const trimmed = rawMessage?.trim() ?? "";
   if (/invalid api key/i.test(trimmed)) {
     return (
-      "Supabase rejected the server API key. Use SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY " +
-      "(the service_role secret from Dashboard → Project Settings → API), not the anon key. " +
-      "Restart `next dev` after changing `.env.local`."
+      "The server email key was rejected. Check the service role secret in your environment " +
+      "and restart the dev server after updating `.env.local`."
     );
   }
   return (
     trimmed ||
-    "Supabase could not send the invite email. The invitation is still pending — fix the issue or use “Link existing auth user”, then try again."
+    "The sign-up email could not be sent. The invitation is still pending — share the sign-in link below, or link an existing account."
   );
 }
 
 export type StaffInvitationActionState =
-  | { ok: true; message?: string }
+  | {
+      ok: true;
+      message?: string;
+      /** When true, the platform sent a sign-up email; otherwise use copied links. */
+      emailSent?: boolean;
+      loginUrl: string;
+      invitedEmail: string;
+      recoveryUrl: string;
+      setupSummary: string;
+    }
   | { ok: false; message: string };
 
 function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
+}
+
+function parsePendingClassIds(formData: FormData): string[] {
+  const raw = formData.getAll("classIds");
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim();
+    if (isUuid(id)) out.push(id);
+  }
+  return [...new Set(out)];
+}
+
+function composeFullName(first: string, last: string): string {
+  return [first.trim(), last.trim()].filter(Boolean).join(" ").trim();
 }
 
 export async function createStaffInvitationAction(
@@ -41,27 +63,42 @@ export async function createStaffInvitationAction(
   formData: FormData,
 ): Promise<StaffInvitationActionState> {
   const supabase = await createServerSupabaseClient();
-  const actor = await getAdminActor(supabase);
+  const actor = await getStaffDirectoryManagerActor(supabase);
   if (!actor) {
-    return { ok: false, message: "You must be signed in as an admin." };
+    return {
+      ok: false,
+      message: "You must be signed in with permission to manage staff invitations.",
+    };
   }
 
-  const fullNameRaw = formData.get("fullName");
+  const firstNameRaw = formData.get("firstName");
+  const lastNameRaw = formData.get("lastName");
   const emailRaw = formData.get("email");
   const roleRaw = formData.get("role");
+  const noteRaw = formData.get("staffNote");
+
   if (
-    typeof fullNameRaw !== "string" ||
+    typeof firstNameRaw !== "string" ||
+    typeof lastNameRaw !== "string" ||
     typeof emailRaw !== "string" ||
     typeof roleRaw !== "string"
   ) {
     return { ok: false, message: "Missing name, email, or role." };
   }
 
-  const fullName = fullNameRaw.trim();
+  const firstName = firstNameRaw.trim();
+  const lastName = lastNameRaw.trim();
+  const fullName = composeFullName(firstName, lastName);
   const email = normalizeEmail(emailRaw);
   const role = roleRaw.trim();
+  const staffNote =
+    typeof noteRaw === "string" && noteRaw.trim().length > 0 ? noteRaw.trim() : null;
+
+  if (!firstName || !lastName) {
+    return { ok: false, message: "First and last name are required." };
+  }
   if (!fullName) {
-    return { ok: false, message: "Full name is required." };
+    return { ok: false, message: "Name is required." };
   }
   if (!email) {
     return { ok: false, message: "Email is required." };
@@ -69,6 +106,8 @@ export async function createStaffInvitationAction(
   if (!isRole(role)) {
     return { ok: false, message: "That role is not allowed." };
   }
+
+  const pendingClassIds = role === "teacher" ? parsePendingClassIds(formData) : [];
 
   let redirectTo: string;
   try {
@@ -80,29 +119,23 @@ export async function createStaffInvitationAction(
     };
   }
 
-  let adminClient: ReturnType<typeof createAdminSupabaseClient>;
-  try {
-    adminClient = createAdminSupabaseClient();
-  } catch (e) {
-    return {
-      ok: false,
-      message:
-        e instanceof Error
-          ? e.message
-          : "Missing service role key; cannot send email invites.",
-    };
-  }
+  const baseLogin = redirectTo.replace(/\/$/, "");
+  const recoveryPath = `${baseLogin}?staff_invite=`;
 
   const { data: inserted, error } = await supabase
     .from("staff_invitations")
     .insert({
       email,
       full_name: fullName,
+      first_name: firstName,
+      last_name: lastName,
       role,
       invited_by: actor.userId,
       status: "pending",
+      staff_note: staffNote,
+      pending_class_ids: pendingClassIds,
     })
-    .select("id")
+    .select("id, invite_token")
     .maybeSingle();
 
   if (error) {
@@ -115,9 +148,11 @@ export async function createStaffInvitationAction(
     }
     return { ok: false, message: error.message };
   }
-  if (!inserted?.id) {
+  if (!inserted?.id || !inserted.invite_token) {
     return { ok: false, message: "Invitation was not created." };
   }
+
+  const recoveryUrl = `${recoveryPath}${encodeURIComponent(inserted.invite_token)}`;
 
   await recordAuditEvent({
     action: "staff_invited",
@@ -130,43 +165,68 @@ export async function createStaffInvitationAction(
     },
   });
 
-  const { data: inviteAuth, error: inviteError } =
-    await adminClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-    });
-
-  if (inviteError) {
-    revalidatePath(STAFF_DIRECTORY_PATH);
-    return {
-      ok: false,
-      message: messageForInviteUserByEmailError(inviteError.message),
-    };
-  }
-
-  // If Auth created or returned a user, record their id on the pending row when emails match.
-  // Dashboard access still waits for `syncPendingStaffInvitationProfile` (after sign-in) to upsert
-  // `profiles` and flip status to `accepted`; leaving status `pending` avoids treating the user as
-  // fully onboarded before they have a session and profile row.
-  const invitedUser = inviteAuth?.user;
-  if (invitedUser?.id) {
-    const authEmail = normalizeEmail(invitedUser.email ?? "");
-    if (authEmail === email) {
-      const { error: linkErr } = await supabase
-        .from("staff_invitations")
-        .update({ accepted_user_id: invitedUser.id })
-        .eq("id", inserted.id)
-        .eq("status", "pending");
-      if (linkErr && process.env.NODE_ENV === "development") {
-        console.warn("[staff-invite] Could not store accepted_user_id on invitation:", linkErr.message);
-      }
+  let adminClient: ReturnType<typeof createAdminSupabaseClient> | null = null;
+  try {
+    adminClient = createAdminSupabaseClient();
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[staff-invite] No admin client:", e);
     }
   }
 
-  revalidatePath(STAFF_DIRECTORY_PATH);
+  let emailSent = false;
+  let inviteErrorMessage: string | undefined;
+  if (adminClient) {
+    const { data: inviteAuth, error: inviteError } =
+      await adminClient.auth.admin.inviteUserByEmail(email, {
+        redirectTo,
+      });
+    emailSent = !inviteError;
+    inviteErrorMessage = inviteError?.message;
+    if (inviteError && process.env.NODE_ENV === "development") {
+      console.warn("[staff-invite] inviteUserByEmail:", inviteError.message);
+    }
+
+    const invitedUser = inviteAuth?.user;
+    if (invitedUser?.id && emailSent) {
+      const authEmail = normalizeEmail(invitedUser.email ?? "");
+      if (authEmail === email) {
+        const { error: linkErr } = await supabase
+          .from("staff_invitations")
+          .update({ accepted_user_id: invitedUser.id })
+          .eq("id", inserted.id)
+          .eq("status", "pending");
+        if (linkErr && process.env.NODE_ENV === "development") {
+          console.warn("[staff-invite] Could not store accepted_user_id on invitation:", linkErr.message);
+        }
+      }
+    }
+  } else {
+    inviteErrorMessage = "Missing server email credentials; cannot send automated sign-up messages.";
+  }
+
+  revalidatePath(staffDirectoryPath(actor.role));
+
+  const setupSummary = [
+    `Invitation recorded for ${fullName} (${email}) as ${role}.`,
+    pendingClassIds.length > 0 && role === "teacher"
+      ? `${pendingClassIds.length} class(es) will attach when they first sign in with this email.`
+      : null,
+    "After their account exists, their profile and dashboard role sync on first sign-in.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return {
     ok: true,
-    message:
-      "Invite email sent. After the staff member accepts, their dashboard role will be applied.",
+    emailSent,
+    message: emailSent
+      ? "Sign-up email sent. Share the recovery link as a backup."
+      : messageForInviteUserByEmailError(inviteErrorMessage),
+    loginUrl: baseLogin,
+    invitedEmail: email,
+    recoveryUrl,
+    setupSummary,
   };
 }
 
@@ -175,9 +235,12 @@ export async function cancelStaffInvitationAction(
   formData: FormData,
 ): Promise<StaffInvitationActionState> {
   const supabase = await createServerSupabaseClient();
-  const actor = await getAdminActor(supabase);
+  const actor = await getStaffDirectoryManagerActor(supabase);
   if (!actor) {
-    return { ok: false, message: "You must be signed in as an admin." };
+    return {
+      ok: false,
+      message: "You must be signed in with permission to manage staff invitations.",
+    };
   }
 
   const idRaw = formData.get("invitationId");
@@ -212,8 +275,15 @@ export async function cancelStaffInvitationAction(
     return { ok: false, message: updateError.message };
   }
 
-  revalidatePath(STAFF_DIRECTORY_PATH);
-  return { ok: true, message: "Invitation cancelled." };
+  revalidatePath(staffDirectoryPath(actor.role));
+  return {
+    ok: true,
+    message: "Invitation cancelled.",
+    loginUrl: "",
+    invitedEmail: "",
+    recoveryUrl: "",
+    setupSummary: "",
+  };
 }
 
 export async function linkStaffProfileFromInvitationAction(
@@ -221,9 +291,12 @@ export async function linkStaffProfileFromInvitationAction(
   formData: FormData,
 ): Promise<StaffInvitationActionState> {
   const supabase = await createServerSupabaseClient();
-  const actor = await getAdminActor(supabase);
+  const actor = await getStaffDirectoryManagerActor(supabase);
   if (!actor) {
-    return { ok: false, message: "You must be signed in as an admin." };
+    return {
+      ok: false,
+      message: "You must be signed in with permission to manage staff invitations.",
+    };
   }
 
   const invitationIdRaw = formData.get("invitationId");
@@ -235,12 +308,12 @@ export async function linkStaffProfileFromInvitationAction(
   const invitationId = invitationIdRaw.trim();
   const authUserId = authUserIdRaw.trim();
   if (!isUuid(invitationId) || !isUuid(authUserId)) {
-    return { ok: false, message: "Invitation id and Auth user id must be valid UUIDs." };
+    return { ok: false, message: "Invitation id and account user id must be valid UUIDs." };
   }
 
   const { data: invite, error: inviteError } = await supabase
     .from("staff_invitations")
-    .select("id, status, role, email, full_name")
+    .select("id, status, role, email, full_name, first_name, last_name")
     .eq("id", invitationId)
     .maybeSingle();
 
@@ -253,7 +326,7 @@ export async function linkStaffProfileFromInvitationAction(
   if (invite.status !== "pending") {
     return {
       ok: false,
-      message: "Only pending invitations can be linked to an Auth user.",
+      message: "Only pending invitations can be linked to an account.",
     };
   }
 
@@ -301,17 +374,19 @@ export async function linkStaffProfileFromInvitationAction(
       return {
         ok: false,
         message:
-          "No Auth user exists with that id. Create the user in the Supabase Dashboard (Authentication), then paste their User UUID here.",
+          "No account exists with that user id. Create the user in your identity provider first, then paste their user id here.",
       };
     }
     return { ok: false, message: upsertError.message };
   }
 
+  const nowIso = new Date().toISOString();
   const { error: inviteUpdateError } = await supabase
     .from("staff_invitations")
     .update({
       status: "accepted",
       accepted_user_id: authUserId,
+      accepted_at: nowIso,
     })
     .eq("id", invitationId)
     .eq("status", "pending");
@@ -332,6 +407,13 @@ export async function linkStaffProfileFromInvitationAction(
     },
   });
 
-  revalidatePath(STAFF_DIRECTORY_PATH);
-  return { ok: true, message: "Profile linked and role applied from the invitation." };
+  revalidatePath(staffDirectoryPath(actor.role));
+  return {
+    ok: true,
+    message: "Profile linked and role applied from the invitation.",
+    loginUrl: "",
+    invitedEmail: "",
+    recoveryUrl: "",
+    setupSummary: "",
+  };
 }

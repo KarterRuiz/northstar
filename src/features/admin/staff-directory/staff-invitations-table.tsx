@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Mail } from "lucide-react";
 
 import { roleLabels, type Role } from "@/config/roles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CopyTextButton } from "@/components/ui/copy-text-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ListEmptyState } from "@/components/workspace/list-empty-state";
@@ -24,9 +25,13 @@ import {
   linkStaffProfileFromInvitationAction,
   type StaffInvitationActionState,
 } from "@/features/admin/staff-directory/staff-invitations-actions";
+import {
+  staffInvitationDisplayStatus,
+  staffInvitationStatusLabel,
+} from "@/lib/staff/invitation-display-status";
 
 function statusBadgeVariant(
-  status: StaffInvitationRow["status"],
+  status: ReturnType<typeof staffInvitationDisplayStatus>,
 ): "default" | "secondary" | "outline" | "destructive" {
   switch (status) {
     case "pending":
@@ -37,12 +42,20 @@ function statusBadgeVariant(
       return "outline";
     case "expired":
       return "destructive";
+    case "inactive":
+      return "outline";
     default:
       return "outline";
   }
 }
 
-function InvitationRow({ row }: { row: StaffInvitationRow }) {
+function InvitationRow({
+  row,
+  loginBaseUrl,
+}: {
+  row: StaffInvitationRow;
+  loginBaseUrl: string;
+}) {
   const router = useRouter();
   const [cancelState, cancelAction, cancelPending] = useActionState<
     StaffInvitationActionState | undefined,
@@ -60,12 +73,28 @@ function InvitationRow({ row }: { row: StaffInvitationRow }) {
     }
   }, [cancelState?.ok, linkState?.ok, router]);
 
+  const displayStatus = staffInvitationDisplayStatus(row);
   const isPending = row.status === "pending";
   const roleLabel = roleLabels[row.role as Role] ?? row.role;
 
+  const recoveryUrl = useMemo(() => {
+    try {
+      const u = new URL(loginBaseUrl);
+      u.searchParams.set("staff_invite", row.invite_token);
+      return u.toString();
+    } catch {
+      return "";
+    }
+  }, [loginBaseUrl, row.invite_token]);
+
   return (
     <TableRow>
-      <TableCell className="font-medium">{row.full_name}</TableCell>
+      <TableCell className="font-medium">
+        {row.full_name}
+        {row.staff_note ? (
+          <p className="text-muted-foreground mt-1 text-xs italic">&ldquo;{row.staff_note}&rdquo;</p>
+        ) : null}
+      </TableCell>
       <TableCell>
         <span className="text-muted-foreground flex items-center gap-1.5 text-sm">
           <Mail className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
@@ -74,18 +103,28 @@ function InvitationRow({ row }: { row: StaffInvitationRow }) {
       </TableCell>
       <TableCell className="text-sm">{roleLabel}</TableCell>
       <TableCell>
-        <Badge variant={statusBadgeVariant(row.status)}>{row.status}</Badge>
+        <Badge variant={statusBadgeVariant(displayStatus)}>
+          {staffInvitationStatusLabel(displayStatus)}
+        </Badge>
       </TableCell>
       <TableCell className="text-muted-foreground whitespace-nowrap text-xs">
-        {new Date(row.created_at).toLocaleString()}
+        <div>Created {new Date(row.created_at).toLocaleString()}</div>
+        {row.expires_at ? (
+          <div className="mt-0.5">Expires {new Date(row.expires_at).toLocaleDateString()}</div>
+        ) : null}
       </TableCell>
       <TableCell className="min-w-[14rem]">
         {isPending ? (
           <div className="flex flex-col gap-3">
+            {recoveryUrl ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <CopyTextButton text={recoveryUrl} label="Copy recovery link" size="sm" />
+              </div>
+            ) : null}
             <form action={cancelAction} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="invitationId" value={row.id} />
               <Button type="submit" variant="outline" size="sm" disabled={cancelPending}>
-                {cancelPending ? "Cancelling…" : "Cancel invite"}
+                {cancelPending ? "Cancelling…" : "Withdraw invite"}
               </Button>
               {cancelState && !cancelState.ok ? (
                 <span className="text-destructive text-xs" role="alert">
@@ -102,7 +141,7 @@ function InvitationRow({ row }: { row: StaffInvitationRow }) {
               <input type="hidden" name="invitationId" value={row.id} />
               <div className="space-y-1">
                 <Label className="text-xs" htmlFor={`auth-user-${row.id}`}>
-                  Link Auth user (UUID)
+                  Link existing account (user id)
                 </Label>
                 <Input
                   id={`auth-user-${row.id}`}
@@ -114,7 +153,7 @@ function InvitationRow({ row }: { row: StaffInvitationRow }) {
                 />
               </div>
               <Button type="submit" size="sm" disabled={linkPending}>
-                {linkPending ? "Linking…" : "Link user & apply role"}
+                {linkPending ? "Linking…" : "Link account & apply role"}
               </Button>
               {linkState && !linkState.ok ? (
                 <p className="text-destructive text-xs" role="alert">
@@ -141,9 +180,10 @@ function InvitationRow({ row }: { row: StaffInvitationRow }) {
 type StaffInvitationsTableProps = {
   rows: StaffInvitationRow[];
   error: string | null;
+  loginBaseUrl: string;
 };
 
-export function StaffInvitationsTable({ rows, error }: StaffInvitationsTableProps) {
+export function StaffInvitationsTable({ rows, error, loginBaseUrl }: StaffInvitationsTableProps) {
   return (
     <div className="space-y-3">
       {error ? (
@@ -159,7 +199,7 @@ export function StaffInvitationsTable({ rows, error }: StaffInvitationsTableProp
         <ListEmptyState
           icon={Mail}
           title="No invitations yet"
-          description="Use “Invite staff member” to record someone before their Auth account exists."
+          description="Invite a colleague to create a pending record before their first sign-in."
         />
       ) : null}
 
@@ -171,13 +211,13 @@ export function StaffInvitationsTable({ rows, error }: StaffInvitationsTableProp
               <TableHead className="w-[22%]">Email</TableHead>
               <TableHead className="w-[14%]">Role</TableHead>
               <TableHead className="w-[12%]">Status</TableHead>
-              <TableHead className="w-[16%]">Created</TableHead>
+              <TableHead className="w-[16%]">Dates</TableHead>
               <TableHead className="w-[18%]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <InvitationRow key={row.id} row={row} />
+              <InvitationRow key={row.id} row={row} loginBaseUrl={loginBaseUrl} />
             ))}
           </TableBody>
         </Table>

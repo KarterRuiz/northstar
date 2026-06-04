@@ -8,17 +8,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { InviteStaffSheet } from "@/features/admin/staff-directory/invite-staff-sheet";
+import type { ClassInviteOption } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import type { StaffInvitationRow } from "@/features/admin/staff-directory/staff-invitations-queries";
 import { StaffInvitationsTable } from "@/features/admin/staff-directory/staff-invitations-table";
 
 type StaffOnboardingSectionProps = {
   invitations: StaffInvitationRow[];
   invitationsError: string | null;
+  classOptions: ClassInviteOption[];
+  loginBaseUrl: string;
 };
 
 export function StaffOnboardingSection({
   invitations,
   invitationsError,
+  classOptions,
+  loginBaseUrl,
 }: StaffOnboardingSectionProps) {
   return (
     <Card>
@@ -26,28 +31,27 @@ export function StaffOnboardingSection({
         <div className="space-y-1.5">
           <CardTitle>Staff onboarding</CardTitle>
           <CardDescription>
-            Track who should get dashboard access before their Supabase Auth user exists. After you
-            create the user in the Supabase Dashboard, paste their User UUID below to attach the
-            invitation role to <code className="text-foreground rounded bg-muted px-1 py-0.5 text-xs">profiles</code>.
+            Invite colleagues, copy sign-in links, and track pending access. When someone signs in
+            with the invited email, their profile and role update automatically. Optional class
+            picks apply for teachers on first login.
           </CardDescription>
         </div>
-        <InviteStaffSheet />
+        <InviteStaffSheet classOptions={classOptions} />
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="bg-muted/40 text-muted-foreground rounded-lg border px-4 py-3 text-sm leading-relaxed">
-          <p className="text-foreground font-medium">Fully automatic email invites</p>
+          <p className="text-foreground font-medium">If email delivery fails</p>
           <p className="mt-1">
-            Sending sign-up links, provisioning Auth users, or syncing directory email without manual
-            steps requires a secure server environment with the Supabase{" "}
-            <code className="text-foreground rounded bg-background px-1 py-0.5 text-xs">
-              service_role
-            </code>{" "}
-            key or the Auth Admin API. Those credentials must never ship to the browser — this MVP
-            intentionally avoids that and keeps all mutations behind signed-in admin server actions
-            using the normal user session.
+            The invitation is still saved. Use <strong>Copy recovery link</strong> on the row, or
+            the links shown after you submit the invite form. The invitee should use the same work
+            email when they sign in so their access syncs.
           </p>
         </div>
-        <StaffInvitationsTable rows={invitations} error={invitationsError} />
+        <StaffInvitationsTable
+          rows={invitations}
+          error={invitationsError}
+          loginBaseUrl={loginBaseUrl}
+        />
       </CardContent>
     </Card>
   );
