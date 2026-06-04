@@ -1,0 +1,18 @@
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  .report-card-print-root {
+    font-size: 10.5pt;
+    line-height: 1.4;
+  }
+
+  .report-card-print-root .rc-section {
+    break-inside: avoid;
+  }
+
+  .report-card-print-root .rc-section-breakable {
+    break-inside: auto;
+  }
+}

@@ -1,0 +1,14 @@
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  .record-packet-print-root {
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+
+  .record-packet-print-root section {
+    break-inside: avoid;
+  }
+}
