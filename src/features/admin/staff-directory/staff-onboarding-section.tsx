@@ -43,8 +43,8 @@ export function StaffOnboardingSection({
           <p className="text-foreground font-medium">If email delivery fails</p>
           <p className="mt-1">
             The invitation is still saved. Use <strong>Copy recovery link</strong> on the row, or
-            the links shown after you submit the invite form. The invitee should use the same work
-            email when they sign in so their access syncs.
+            the links shown after you submit the invite form. They should sign in with the same
+            email address you invited so their access syncs.
           </p>
         </div>
         <StaffInvitationsTable

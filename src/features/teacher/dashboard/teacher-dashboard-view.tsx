@@ -167,7 +167,7 @@ export async function TeacherDashboardView() {
         {classes.length === 0 ? (
           <ListEmptyState
             title="No classes assigned yet"
-            description="When leadership links your profile to classes in class management, they will appear here with live enrollment counts."
+            description="When leadership links your profile to classes under Classes, they will appear here with live enrollment counts."
           />
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -17,6 +17,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { AdminTeacherInviteAssignedClasses } from "@/features/admin/staff-directory/admin-assigned-classes-field";
 import type { ClassInviteOption } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import {
   createStaffInvitationAction,
@@ -132,7 +133,7 @@ function InviteStaffFormBody({
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="invite-email">Work email</Label>
+        <Label htmlFor="invite-email">Email address</Label>
         <Input
           id="invite-email"
           name="email"
@@ -140,8 +141,12 @@ function InviteStaffFormBody({
           autoComplete="email"
           required
           disabled={pending}
-          placeholder="name@school.edu"
+          placeholder="teacher@example.com"
+          aria-describedby="invite-email-hint"
         />
+        <p id="invite-email-hint" className="text-muted-foreground text-xs">
+          Use the email this staff member will use to sign in.
+        </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="invite-role">Dashboard role</Label>
@@ -162,27 +167,7 @@ function InviteStaffFormBody({
         </select>
       </div>
       {role === "teacher" && classOptions.length > 0 ? (
-        <div className="space-y-2">
-          <Label htmlFor="invite-classes">Classes to assign after sign-in (optional)</Label>
-          <select
-            id="invite-classes"
-            name="classIds"
-            multiple
-            disabled={pending}
-            className="border-input bg-background ring-offset-background focus-visible:ring-ring min-h-[8rem] w-full rounded-md border px-2 py-2 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            aria-describedby="invite-classes-hint"
-          >
-            {classOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <p id="invite-classes-hint" className="text-muted-foreground text-xs">
-            Hold Ctrl or ⌘ to select multiple. Links apply when their teacher profile is created on
-            first login.
-          </p>
-        </div>
+        <AdminTeacherInviteAssignedClasses options={classOptions} disabled={pending} />
       ) : null}
       <div className="space-y-2">
         <Label htmlFor="invite-note">Note to include in your own follow-up (optional)</Label>

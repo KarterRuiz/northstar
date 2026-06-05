@@ -11,6 +11,7 @@ import { isUuid } from "@/lib/students/uuid";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getAuthEmailRedirectToLogin } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isValidEmailFormat } from "@/lib/validation/is-valid-email-format";
 
 function messageForInviteUserByEmailError(rawMessage: string | undefined): string {
   const trimmed = rawMessage?.trim() ?? "";
@@ -102,6 +103,9 @@ export async function createStaffInvitationAction(
   }
   if (!email) {
     return { ok: false, message: "Email is required." };
+  }
+  if (!isValidEmailFormat(email)) {
+    return { ok: false, message: "Enter a valid email address." };
   }
   if (!isRole(role)) {
     return { ok: false, message: "That role is not allowed." };

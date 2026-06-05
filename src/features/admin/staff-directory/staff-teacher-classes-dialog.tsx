@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AdminStaffDirectoryClassPicker } from "@/features/admin/staff-directory/admin-assigned-classes-field";
 import type { ClassInviteOption } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import type { StaffClassAssignmentRow } from "@/features/admin/staff-directory/staff-directory-queries";
 import {
@@ -28,6 +29,53 @@ import {
   removeStaffTeacherFromClassAction,
   type StaffTeacherClassActionState,
 } from "@/features/admin/staff-directory/staff-teacher-class-actions";
+
+function StaffTeacherAddClassForm({
+  teacherProfileId,
+  addOptions,
+}: {
+  teacherProfileId: string;
+  addOptions: ClassInviteOption[];
+}) {
+  const router = useRouter();
+  const [addClassId, setAddClassId] = useState("");
+  const [assignState, assignAction, assignPending] = useActionState<
+    StaffTeacherClassActionState | undefined,
+    FormData
+  >(assignStaffTeacherToClassAction, undefined);
+
+  useEffect(() => {
+    if (assignState?.ok) {
+      router.refresh();
+    }
+  }, [assignState?.ok, router]);
+
+  return (
+    <>
+      <form action={assignAction} className="flex flex-col gap-2 border-t pt-4">
+        <input type="hidden" name="teacherProfileId" value={teacherProfileId} />
+        <input type="hidden" name="classId" value={addClassId} />
+        <Label htmlFor={`add-class-${teacherProfileId}`}>Add to class</Label>
+        <AdminStaffDirectoryClassPicker
+          id={`add-class-${teacherProfileId}`}
+          options={addOptions}
+          value={addClassId}
+          onValueChange={setAddClassId}
+          disabled={assignPending}
+          placeholder="Search classes to add…"
+        />
+        <Button type="submit" size="sm" disabled={assignPending || !addClassId} className="w-fit">
+          {assignPending ? "Adding…" : "Add assignment"}
+        </Button>
+      </form>
+      {assignState && !assignState.ok ? (
+        <p className="text-destructive text-xs" role="alert">
+          {assignState.message}
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 type StaffTeacherClassesPanelProps = {
   teacherProfileId: string;
@@ -47,21 +95,21 @@ export function StaffTeacherClassesPanel({
     [availableClasses, assignedIds],
   );
 
-  const [assignState, assignAction, assignPending] = useActionState<
-    StaffTeacherClassActionState | undefined,
-    FormData
-  >(assignStaffTeacherToClassAction, undefined);
-
   const [removeState, removeAction, removePending] = useActionState<
     StaffTeacherClassActionState | undefined,
     FormData
   >(removeStaffTeacherFromClassAction, undefined);
 
+  const assignedClassKey = useMemo(
+    () => assigned.map((a) => a.classId).sort().join(","),
+    [assigned],
+  );
+
   useEffect(() => {
-    if (assignState?.ok || removeState?.ok) {
+    if (removeState?.ok) {
       router.refresh();
     }
-  }, [assignState?.ok, removeState?.ok, router]);
+  }, [removeState?.ok, router]);
 
   return (
     <div className="space-y-4">
@@ -111,37 +159,13 @@ export function StaffTeacherClassesPanel({
       </div>
 
       {addOptions.length > 0 ? (
-        <form action={assignAction} className="flex flex-col gap-2 border-t pt-4">
-          <input type="hidden" name="teacherProfileId" value={teacherProfileId} />
-          <Label htmlFor={`add-class-${teacherProfileId}`}>Add to class</Label>
-          <select
-            id={`add-class-${teacherProfileId}`}
-            name="classId"
-            required
-            disabled={assignPending}
-            className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-2 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-            defaultValue=""
-          >
-            <option value="" disabled>
-              Choose a class…
-            </option>
-            {addOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <Button type="submit" size="sm" disabled={assignPending} className="w-fit">
-            {assignPending ? "Adding…" : "Add assignment"}
-          </Button>
-        </form>
+        <StaffTeacherAddClassForm
+          key={assignedClassKey}
+          teacherProfileId={teacherProfileId}
+          addOptions={addOptions}
+        />
       ) : assigned.length > 0 ? (
         <p className="text-muted-foreground text-xs">All active classes already include this teacher.</p>
-      ) : null}
-      {assignState && !assignState.ok ? (
-        <p className="text-destructive text-xs" role="alert">
-          {assignState.message}
-        </p>
       ) : null}
       {removeState && !removeState.ok ? (
         <p className="text-destructive text-xs" role="alert">

@@ -35,8 +35,14 @@ export function AdminDashboardHome() {
             <span className="text-muted-foreground/60" aria-hidden>
               ·
             </span>
+            <Link href="/dashboard/admin/school-settings#academic-structure" className={linkClass}>
+              Academic structure (years & grades)
+            </Link>
+            <span className="text-muted-foreground/60" aria-hidden>
+              ·
+            </span>
             <Link href="/dashboard/admin/classes" className={linkClass}>
-              School years, grades & classes
+              Classes & teacher assignments
             </Link>
             <span className="text-muted-foreground/60" aria-hidden>
               ·

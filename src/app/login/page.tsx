@@ -31,7 +31,7 @@ export default async function LoginPage({
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Sign in to {siteConfig.name}</CardTitle>
           <CardDescription>
-            {siteConfig.name} · {siteConfig.tagline}. Use your school account.
+            {siteConfig.name} · {siteConfig.tagline}. Sign in with your email and password.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -43,7 +43,7 @@ export default async function LoginPage({
               <p className="text-foreground font-medium">You have a pending invitation</p>
               <p className="mt-1">
                 Sign in with <span className="text-foreground font-medium">{inviteHint.emailHint}</span>{" "}
-                ({inviteHint.fullName}) using your school password.
+                ({inviteHint.fullName}) using the password for that account.
               </p>
             </div>
           ) : null}

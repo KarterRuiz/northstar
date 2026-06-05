@@ -17,8 +17,8 @@ const ADMIN_SECTIONS: Record<string, AdminSectionShellProps> = {
   classes: {
     title: "Classes",
     description:
-      "Configure class rosters, schedules, and teaching assignments for the current term.",
-    emptyState: "Class management views will appear here.",
+      "Create classes, assign teachers, and archive sections. School years and grade levels live under School settings → Academic structure.",
+    emptyState: "Class roster and assignment tools will appear here.",
   },
   teachers: {
     title: "Teachers",

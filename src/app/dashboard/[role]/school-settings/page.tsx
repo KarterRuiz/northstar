@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 
-import { isRole, type Role } from "@/config/roles";
+import { canManageSchoolStructure, isRole, type Role } from "@/config/roles";
 import { siteConfig } from "@/config/site";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import {
@@ -10,6 +11,8 @@ import {
 } from "@/features/school-settings/assert-school-settings-dashboard-role";
 import { loadSchoolLogoPreviewUrl } from "@/features/school-settings/load-school-logo-preview-url";
 import { loadSchoolSettings } from "@/features/school-settings/load-school-settings";
+import { AcademicStructureForms } from "@/features/school-settings/academic-structure-forms";
+import { loadAcademicStructurePageData } from "@/features/school-settings/load-academic-structure-data";
 import { SchoolSettingsForm } from "@/features/school-settings/school-settings-form";
 import { Settings } from "lucide-react";
 
@@ -34,7 +37,7 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
 
   if (!loaded.ok) {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-6 p-6 sm:p-8">
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
         <WorkspacePageHeader
           eyebrow={siteConfig.shortName}
           title="School settings"
@@ -52,8 +55,27 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
 
   const logoPreviewUrl = await loadSchoolLogoPreviewUrl(loaded.settings.logoStoragePath);
 
+  let academicStructureBlock: ReactNode = null;
+  if (canManageSchoolStructure(role)) {
+    const ac = await loadAcademicStructurePageData();
+    academicStructureBlock = !ac.ok ? (
+      <div
+        className="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
+        role="alert"
+      >
+        <span className="font-medium">Could not load academic structure.</span> {ac.message}
+      </div>
+    ) : (
+      <AcademicStructureForms
+        dashboardRole={role}
+        schoolYears={ac.schoolYears}
+        gradeLevels={ac.gradeLevels}
+      />
+    );
+  }
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 p-6 sm:p-8">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="School settings"
@@ -69,6 +91,8 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
           </span>
         }
       />
+
+      {academicStructureBlock}
 
       <SchoolSettingsForm
         dashboardRole={role}

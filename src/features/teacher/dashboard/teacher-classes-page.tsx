@@ -57,7 +57,7 @@ async function TeacherClassesBody() {
       {classes.length === 0 ? (
         <ListEmptyState
           title="No assigned classes"
-          description="Your account is not linked in class_teachers yet. Ask leadership to assign you in class management."
+          description="Your account is not linked in class_teachers yet. Ask leadership to assign you under Classes."
         />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">

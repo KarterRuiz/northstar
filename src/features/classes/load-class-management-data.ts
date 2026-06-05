@@ -1,6 +1,6 @@
 import { formatStaffProfileLabel } from "@/lib/staff/format-staff-profile-label";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import type { Database } from "@/types/database.types";
 
@@ -29,21 +29,93 @@ export type ClassManagementClassRow = ClassRow & {
   schoolYearLabel: string;
   gradeLevelName: string;
   teachers: ClassTeacherDisplay[];
+  /** Active student_enrollments rows for this class. */
+  studentEnrollmentCount: number;
   /** True when the class has no enrollments or academic artifacts (safe to hard-delete). */
   deletable: boolean;
 };
+
+export type ClassManagementGradeFilterOption = {
+  id: string;
+  name: string;
+};
+
+export type ClassManagementAppliedFilters = {
+  q: string;
+  status: "all" | "active" | "archived";
+  gradeLevelId: string | null;
+};
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function parseClassManagementFilters(
+  raw: Record<string, string | string[] | undefined> | undefined,
+  validGradeIds: Set<string>,
+): ClassManagementAppliedFilters {
+  const qRaw = firstParam(raw?.q) ?? "";
+  const q = qRaw.trim().slice(0, 200);
+
+  const statusRaw = (firstParam(raw?.status) ?? "all").toLowerCase();
+  const status: ClassManagementAppliedFilters["status"] =
+    statusRaw === "active" || statusRaw === "archived" ? statusRaw : "all";
+
+  const gradeRaw = firstParam(raw?.grade)?.trim() ?? "";
+  const gradeLevelId = validGradeIds.has(gradeRaw) ? gradeRaw : null;
+
+  return { q, status, gradeLevelId };
+}
+
+function classMatchesFilters(
+  row: ClassManagementClassRow,
+  filters: ClassManagementAppliedFilters,
+): boolean {
+  if (filters.status === "active" && !row.is_active) return false;
+  if (filters.status === "archived" && row.is_active) return false;
+
+  if (filters.gradeLevelId && row.grade_level_id !== filters.gradeLevelId) {
+    return false;
+  }
+
+  if (!filters.q) return true;
+
+  const needle = filters.q.toLowerCase();
+  const teacherText = row.teachers.map((t) => t.teacherLabel).join(" ").toLowerCase();
+  const hay = [
+    row.name,
+    row.section ?? "",
+    row.gradeLevelName,
+    teacherText,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return hay.includes(needle);
+}
 
 export type ClassManagementPageData =
   | {
       ok: true;
       schoolYears: SchoolYearRow[];
       gradeLevels: GradeLevelRow[];
+      /** Classes matching URL filters (`q`, `status`, `grade`). */
       classes: ClassManagementClassRow[];
+      /** Full class list (ignores URL filters) for admin forms such as teacher assignment. */
+      allClasses: ClassManagementClassRow[];
       teachers: TeacherOption[];
+      /** Distinct grade levels that appear on any class (for filter dropdown). */
+      gradeFilterOptions: ClassManagementGradeFilterOption[];
+      appliedFilters: ClassManagementAppliedFilters;
+      /** Count of all classes before URL filters (search / status / grade). */
+      totalClassCount: number;
     }
   | { ok: false; message: string };
 
-export async function loadClassManagementPageData(): Promise<ClassManagementPageData> {
+export async function loadClassManagementPageData(
+  searchParams?: Record<string, string | string[] | undefined>,
+): Promise<ClassManagementPageData> {
   if (!isSupabaseConfigured()) {
     return {
       ok: false,
@@ -88,6 +160,8 @@ export async function loadClassManagementPageData(): Promise<ClassManagementPage
 
   const schoolYears = (yearsRes.data ?? []) as SchoolYearRow[];
   const gradeLevels = (gradesRes.data ?? []) as GradeLevelRow[];
+  const validGradeIds = new Set(gradeLevels.map((g) => g.id));
+  const appliedFilters = parseClassManagementFilters(searchParams, validGradeIds);
   const classRows = (classesRes.data ?? []) as ClassRow[];
   const teachers: TeacherOption[] = (teachersRes.data ?? []).map((row) => ({
     id: row.id,
@@ -161,6 +235,23 @@ export async function loadClassManagementPageData(): Promise<ClassManagementPage
     teachersByClass.set(ct.class_id, list);
   }
 
+  const enrollmentCountByClassId = new Map<string, number>();
+  if (classRows.length > 0) {
+    const ids = classRows.map((c) => c.id);
+    const enrRes = await supabase
+      .from("student_enrollments")
+      .select("class_id")
+      .in("class_id", ids)
+      .eq("status", "active");
+    if (enrRes.error) {
+      return { ok: false, message: enrRes.error.message };
+    }
+    for (const row of enrRes.data ?? []) {
+      const cid = row.class_id;
+      enrollmentCountByClassId.set(cid, (enrollmentCountByClassId.get(cid) ?? 0) + 1);
+    }
+  }
+
   const deletableByClassId = new Map<string, boolean>();
   if (classRows.length > 0) {
     const deletableResults = await Promise.all(
@@ -176,21 +267,33 @@ export async function loadClassManagementPageData(): Promise<ClassManagementPage
     }
   }
 
-  const classes: ClassManagementClassRow[] = classRows.map((c) => ({
+  const classesUnfiltered: ClassManagementClassRow[] = classRows.map((c) => ({
     ...c,
     schoolYearLabel: yearById.get(c.school_year_id)?.label ?? c.school_year_id,
     gradeLevelName: gradeById.get(c.grade_level_id)?.name ?? c.grade_level_id,
     teachers: (teachersByClass.get(c.id) ?? []).sort((a, b) =>
       a.role.localeCompare(b.role),
     ),
+    studentEnrollmentCount: enrollmentCountByClassId.get(c.id) ?? 0,
     deletable: deletableByClassId.get(c.id) ?? false,
   }));
+
+  const gradeIdSet = new Set(classesUnfiltered.map((c) => c.grade_level_id));
+  const gradeFilterOptions: ClassManagementGradeFilterOption[] = gradeLevels
+    .filter((g) => gradeIdSet.has(g.id))
+    .map((g) => ({ id: g.id, name: g.name }));
+
+  const classes = classesUnfiltered.filter((c) => classMatchesFilters(c, appliedFilters));
 
   return {
     ok: true,
     schoolYears,
     gradeLevels,
     classes,
+    allClasses: classesUnfiltered,
     teachers,
+    gradeFilterOptions,
+    appliedFilters,
+    totalClassCount: classesUnfiltered.length,
   };
 }

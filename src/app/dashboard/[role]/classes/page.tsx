@@ -17,10 +17,17 @@ export const metadata: Metadata = {
 
 type PageProps = {
   params: Promise<{ role: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-async function ClassManagementBody() {
-  const data = await loadClassManagementPageData();
+async function ClassManagementBody({
+  role,
+  searchParams,
+}: {
+  role: Role;
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const data = await loadClassManagementPageData(searchParams);
 
   if (!data.ok) {
     return (
@@ -35,15 +42,20 @@ async function ClassManagementBody() {
 
   return (
     <ClassManagementForms
+      dashboardRole={role}
       schoolYears={data.schoolYears}
       gradeLevels={data.gradeLevels}
       classes={data.classes}
+      allClasses={data.allClasses}
       teachers={data.teachers}
+      gradeFilterOptions={data.gradeFilterOptions}
+      appliedFilters={data.appliedFilters}
+      totalClassCount={data.totalClassCount}
     />
   );
 }
 
-export default async function ClassManagementPage({ params }: PageProps) {
+export default async function ClassManagementPage({ params, searchParams }: PageProps) {
   const { role: roleParam } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
@@ -56,29 +68,43 @@ export default async function ClassManagementPage({ params }: PageProps) {
     notFound();
   }
 
+  const sp = await searchParams;
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
-      <div className="space-y-2">
+    <div className="mx-auto w-full max-w-7xl space-y-8 p-6 sm:p-8">
+      <header className="space-y-3 border-b border-border pb-8">
         <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
           {siteConfig.shortName}
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Class management</h1>
-        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          Create school years, grade levels, and classes; assign homeroom and additional teachers.
-          Changes are enforced by RLS for admin, principal, and vice principal accounts.
-        </p>
-        <p className="text-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Classes</h1>
+            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+              Roster overview, enrollment counts, and class lifecycle. Use{" "}
+              <span className="text-foreground font-medium">+ New class</span> to create a class with
+              homeroom and supporting teachers in one step, or adjust assignments later with{" "}
+              <span className="text-foreground font-medium">Edit teachers</span> on each row.
+              School years and grade levels live under{" "}
+              <Link
+                href={`/dashboard/${role}/school-settings#academic-structure`}
+                className="text-primary font-medium underline-offset-4 hover:underline"
+              >
+                School settings → Academic structure
+              </Link>
+              . RLS applies for admin, principal, and vice principal accounts.
+            </p>
+          </div>
           <Link
             href={`/dashboard/${role}`}
-            className="text-primary font-medium underline-offset-4 hover:underline"
+            className="text-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
           >
             Back to {roleLabels[role]} overview
           </Link>
-        </p>
-      </div>
+        </div>
+      </header>
 
       <Suspense fallback={<ClassManagementLoading />}>
-        <ClassManagementBody />
+        <ClassManagementBody role={role} searchParams={sp} />
       </Suspense>
     </div>
   );

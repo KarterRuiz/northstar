@@ -27,8 +27,14 @@ import {
   restoreClassAction,
   type ClassManagementMutationState,
 } from "./class-management-actions";
-import { CLASS_DELETE_CONFIRM_HINT, CLASS_HAS_RECORDS_MESSAGE } from "./constants";
-import type { ClassManagementClassRow } from "./load-class-management-data";
+import { ClassTeachersEditDialog } from "./class-teachers-edit-dialog";
+import {
+  CLASS_DELETE_CONFIRM_HINT,
+  CLASS_HAS_RECORDS_MESSAGE,
+  CLASS_TEACHER_ROLE_HOMEROOM,
+  formatClassTeacherRoleForDisplay,
+} from "./constants";
+import type { ClassManagementClassRow, TeacherOption } from "./load-class-management-data";
 
 function MutationBanner({ state }: { state: ClassManagementMutationState | undefined }) {
   if (!state) return null;
@@ -52,13 +58,20 @@ function classRowLabel(c: ClassManagementClassRow): string {
   return `${c.schoolYearLabel} · ${c.gradeLevelName} · ${base}${sec ? ` ${sec}` : ""}`;
 }
 
+function homeroomLabel(c: ClassManagementClassRow): string | null {
+  const hr = c.teachers.find((t) => t.role === CLASS_TEACHER_ROLE_HOMEROOM);
+  return hr?.teacherLabel ?? null;
+}
+
 type ConfirmKind = "archive" | "restore" | "delete" | null;
 
 function ClassRowActions({
   klass,
+  teachers,
   onMutation,
 }: {
   klass: ClassManagementClassRow;
+  teachers: TeacherOption[];
   onMutation: (state: ClassManagementMutationState) => void;
 }) {
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
@@ -87,6 +100,18 @@ function ClassRowActions({
   return (
     <>
       <div className="flex flex-wrap gap-2">
+        {klass.is_active ? (
+          <ClassTeachersEditDialog
+            klass={klass}
+            teachers={teachers}
+            disabled={teachers.length === 0 || pending}
+            disabledReason={
+              teachers.length === 0
+                ? "Add at least one user with the teacher role before assigning class teachers."
+                : "Wait for the current action to finish."
+            }
+          />
+        ) : null}
         {klass.is_active ? (
           <Button
             type="button"
@@ -217,104 +242,78 @@ function ClassRowActions({
   );
 }
 
-function ClassesTable({
-  rows,
-  emptyMessage,
-  onMutation,
+export function ClassesOverviewTable({
+  classes,
+  teachers,
 }: {
-  rows: ClassManagementClassRow[];
-  emptyMessage: string;
-  onMutation: (state: ClassManagementMutationState) => void;
+  classes: ClassManagementClassRow[];
+  teachers: TeacherOption[];
 }) {
-  if (rows.length === 0) {
-    return (
-      <p className="text-muted-foreground border-muted rounded-md border border-dashed px-4 py-6 text-center text-sm">
-        {emptyMessage}
-      </p>
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Year</TableHead>
-          <TableHead>Grade</TableHead>
-          <TableHead>Class</TableHead>
-          <TableHead>Section</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="min-w-[12rem]">Teachers</TableHead>
-          <TableHead className="min-w-[10rem]">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((c) => (
-          <TableRow key={c.id}>
-            <TableCell>{c.schoolYearLabel}</TableCell>
-            <TableCell>{c.gradeLevelName}</TableCell>
-            <TableCell className="font-medium">{c.name}</TableCell>
-            <TableCell className="text-muted-foreground">{c.section ?? "—"}</TableCell>
-            <TableCell>
-              <Badge variant={c.is_active ? "default" : "secondary"}>
-                {c.is_active ? "Active" : "Archived"}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-muted-foreground text-xs">
-              {c.teachers.length === 0 ? (
-                "—"
-              ) : (
-                <ul className="list-inside list-disc space-y-0.5">
-                  {c.teachers.map((t) => (
-                    <li key={t.id}>
-                      <span className="capitalize">{t.role.replace("_", " ")}</span>:{" "}
-                      {t.teacherLabel}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </TableCell>
-            <TableCell>
-              <ClassRowActions klass={c} onMutation={onMutation} />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-export function ClassesOverviewTable({ classes }: { classes: ClassManagementClassRow[] }) {
   const [banner, setBanner] = useState<ClassManagementMutationState | undefined>();
 
-  const active = classes.filter((c) => c.is_active);
-  const archived = classes.filter((c) => !c.is_active);
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <MutationBanner state={banner} />
 
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">Active classes</h3>
-        <ClassesTable
-          rows={active}
-          emptyMessage="No active classes. Create a class above or restore an archived one."
-          onMutation={setBanner}
-        />
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">Archived classes</h3>
-        <p className="text-muted-foreground text-sm">
-          Archived classes are hidden from teacher workflows; historical enrollments and records are
-          preserved.
-        </p>
-        <ClassesTable
-          rows={archived}
-          emptyMessage="No archived classes."
-          onMutation={setBanner}
-        />
-      </section>
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableHead className="min-w-[12rem]">Class</TableHead>
+              <TableHead className="whitespace-nowrap">Grade</TableHead>
+              <TableHead className="min-w-[10rem]">Homeroom teacher</TableHead>
+              <TableHead className="min-w-[9rem]">Other teachers</TableHead>
+              <TableHead className="text-right tabular-nums">Students</TableHead>
+              <TableHead className="whitespace-nowrap">Status</TableHead>
+              <TableHead className="min-w-[10rem]">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {classes.map((c) => {
+              const hr = homeroomLabel(c);
+              const additional = c.teachers.filter((t) => t.role !== CLASS_TEACHER_ROLE_HOMEROOM);
+              return (
+                <TableRow key={c.id}>
+                  <TableCell>
+                    <div className="font-medium">{c.name.trim() || "—"}</div>
+                    <div className="text-muted-foreground text-xs">
+                      {c.section?.trim() ? `Section ${c.section}` : c.schoolYearLabel}
+                    </div>
+                  </TableCell>
+                  <TableCell>{c.gradeLevelName}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {hr ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground max-w-[16rem] text-xs">
+                    {additional.length === 0 ? (
+                      "—"
+                    ) : (
+                      <ul className="list-inside list-disc space-y-0.5">
+                        {additional.map((t) => (
+                          <li key={t.id}>
+                            <span>{formatClassTeacherRoleForDisplay(t.role)}</span>: {t.teacherLabel}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {c.studentEnrollmentCount}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={c.is_active ? "default" : "secondary"}>
+                      {c.is_active ? "Active" : "Archived"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <ClassRowActions klass={c} teachers={teachers} onMutation={setBanner} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
-
