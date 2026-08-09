@@ -59,9 +59,9 @@ export function DashboardShell({ children, switcherRoles }: DashboardShellProps)
       <TooltipProvider delayDuration={280}>
         <aside
           className={cn(
-            "bg-sidebar text-sidebar-foreground border-sidebar-border hidden shrink-0 border-r transition-[width] duration-200 ease-out lg:flex lg:min-h-svh lg:flex-col",
+            "bg-sidebar text-sidebar-foreground border-sidebar-border hidden shrink-0 border-r shadow-sm transition-[width] duration-200 ease-out lg:flex lg:min-h-svh lg:flex-col",
             "print:hidden",
-            railMode ? "w-[4.5rem]" : "w-72",
+            railMode ? "w-[4.5rem]" : "w-60 xl:w-64",
           )}
         >
           <div
@@ -85,7 +85,7 @@ export function DashboardShell({ children, switcherRoles }: DashboardShellProps)
           <div className="print:hidden">
             <TopBar switcherRoles={switcherRoles} />
           </div>
-          <main className="min-h-0 flex-1">{children}</main>
+          <main className="bg-background min-h-0 flex-1">{children}</main>
         </div>
       </TooltipProvider>
     </div>

@@ -3,6 +3,10 @@ import "server-only";
 import { cache } from "react";
 
 import { currentTermDateRange } from "@/lib/school-term";
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+} from "@/lib/errors/safe-user-message";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -53,22 +57,22 @@ export async function loadSchoolYearTermContext(): Promise<
   | { ok: false; message: string }
 > {
   if (!isSupabaseConfigured()) {
-    return { ok: false, message: "Supabase is not configured." };
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
   }
 
   const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase
-    .from("school_years")
-    .select("label, starts_on, ends_on")
-    .order("starts_on", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) return { ok: false, message: error.message };
-  if (!data) {
-    return { ok: false, message: "No school year configured." };
+  const currentYearResult = await loadCurrentSchoolYear(supabase);
+  if (!currentYearResult.ok) {
+    return { ok: false, message: currentYearResult.error };
+  }
+  if (!currentYearResult.year) {
+    return {
+      ok: false,
+      message: "No Current school year is set. Set one in School Settings.",
+    };
   }
 
+  const data = currentYearResult.year;
   const { start, end } = currentTermDateRange(data.starts_on, data.ends_on);
   return {
     ok: true,

@@ -63,12 +63,13 @@ on conflict (id) do update set role = excluded.role, updated_at = now();
 -- -----------------------------------------------------------------------------
 -- 3) Starter school year
 -- -----------------------------------------------------------------------------
-insert into public.school_years (id, label, starts_on, ends_on)
+insert into public.school_years (id, label, starts_on, ends_on, is_current)
 values (
   '10000000-0000-4000-8000-000000000001',
   '2025–2026',
   '2025-08-01',
-  '2026-06-30'
+  '2026-06-30',
+  true
 )
 on conflict (label) do nothing;
 
@@ -84,8 +85,8 @@ values
   ('10000000-0000-4000-8000-000000000012', 'Grade 7', 7, 'G7')
 on conflict (name) do nothing;
 
--- Conflicts on `sort_order` are avoided by using distinct names; if you
--- re-seed with different IDs but same sort_order, adjust manually.
+-- Display/sort order may be shared across parallel grade programs; uniqueness is
+-- on name (and optional code), not sort_order.
 
 -- -----------------------------------------------------------------------------
 -- 5) One sample class (2025–2026, Grade 6, section A)

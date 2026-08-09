@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import type {
   ClassManagementAppliedFilters,
   ClassManagementClassRow,
   ClassManagementGradeFilterOption,
+  GradeLevelRow,
+  SchoolYearRow,
   TeacherOption,
 } from "./load-class-management-data";
 
@@ -68,7 +70,7 @@ function ClassesSearchInput({
         autoComplete="off"
       />
       <p className="text-muted-foreground text-xs">
-        Matches class name, section, grade label, and assigned teachers.
+        Matches class name, section, grade, and assigned teachers.
       </p>
     </div>
   );
@@ -78,14 +80,20 @@ export function ClassManagementClassesOverview({
   role,
   classes,
   teachers,
+  schoolYears,
+  gradeLevels,
   gradeFilterOptions,
   appliedFilters,
+  headerAction,
 }: {
   role: string;
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
+  schoolYears: SchoolYearRow[];
+  gradeLevels: GradeLevelRow[];
   gradeFilterOptions: ClassManagementGradeFilterOption[];
   appliedFilters: ClassManagementAppliedFilters;
+  headerAction?: ReactNode;
 }) {
   const router = useRouter();
   const currentSearch = useSearchParams();
@@ -131,13 +139,8 @@ export function ClassManagementClassesOverview({
     navigateFilters({ ...appliedFilters, gradeLevelId });
   };
 
-  const filterSummary =
-    "Totals match the filtered table (search, status, and grade filters).";
-
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground text-xs">{filterSummary}</p>
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -147,7 +150,7 @@ export function ClassManagementClassesOverview({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground text-xs">
-            Rows in the table below
+            Matching your current filters
           </CardContent>
         </Card>
         <Card>
@@ -169,7 +172,7 @@ export function ClassManagementClassesOverview({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground text-xs">
-            Sum of active enrollments in these classes
+            Active enrollments in these classes
           </CardContent>
         </Card>
         <Card>
@@ -187,12 +190,16 @@ export function ClassManagementClassesOverview({
 
       <Card className="overflow-hidden shadow-sm">
         <CardHeader className="border-border space-y-1 border-b bg-muted/30 pb-4">
-          <CardTitle className="text-xl">Classes overview</CardTitle>
-          <CardDescription>
-            Active enrollments, homeroom and supporting teachers, and roster status. Use filters to
-            focus the list; use <span className="text-foreground font-medium">Edit teachers</span>{" "}
-            on a row to manage assignments. Archive and delete behave as before.
-          </CardDescription>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-xl">Classes overview</CardTitle>
+              <CardDescription>
+                Enrollment counts, assigned teachers, and archive status. Use row actions to edit
+                details, manage teachers, or archive a class.
+              </CardDescription>
+            </div>
+            {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
@@ -255,7 +262,12 @@ export function ClassManagementClassesOverview({
               No classes match these filters. Try clearing search or widening status and grade.
             </p>
           ) : (
-            <ClassesOverviewTable classes={classes} teachers={teachers} />
+            <ClassesOverviewTable
+              classes={classes}
+              teachers={teachers}
+              schoolYears={schoolYears}
+              gradeLevels={gradeLevels}
+            />
           )}
         </CardContent>
       </Card>

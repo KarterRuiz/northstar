@@ -69,8 +69,6 @@ export function NewClassDialog({
   const [name, setName] = React.useState("");
   const [section, setSection] = React.useState("");
   const [homeroomTeacherProfileId, setHomeroomTeacherProfileId] = React.useState("");
-  const [roomNumber, setRoomNumber] = React.useState("");
-  const [capacity, setCapacity] = React.useState("");
   const [extraRows, setExtraRows] = React.useState<ExtraRow[]>([]);
 
   const resetFormForOpen = React.useCallback(() => {
@@ -79,8 +77,6 @@ export function NewClassDialog({
     setName("");
     setSection("");
     setHomeroomTeacherProfileId(teachers[0]?.id ?? "");
-    setRoomNumber("");
-    setCapacity("");
     setExtraRows([]);
     setClientError(null);
   }, [schoolYears, gradeLevels, teachers]);
@@ -108,8 +104,6 @@ export function NewClassDialog({
           teacherProfileId: r.teacherProfileId,
           uiRole: r.uiRole,
         })),
-      roomNumber: roomNumber.trim() || undefined,
-      capacity: capacity.trim() === "" ? undefined : Number.parseInt(capacity, 10),
     };
 
     const parsed = createClassWithTeachersBodySchema.safeParse(payload);
@@ -181,7 +175,7 @@ export function NewClassDialog({
                     first.
                   </>
                 ) : (
-                  <>No teacher profiles are available yet. Invite staff with the teacher role first.</>
+                  <>No teacher profiles are available yet. Add staff with the teacher role and send an invitation first.</>
                 )}
               </p>
             ) : (
@@ -270,37 +264,6 @@ export function NewClassDialog({
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="nc-room">Room number (optional)</Label>
-                    <Input
-                      id="nc-room"
-                      value={roomNumber}
-                      onChange={(e) => setRoomNumber(e.target.value)}
-                      placeholder="Not stored yet"
-                      autoComplete="off"
-                      maxLength={40}
-                    />
-                    <p className="text-muted-foreground text-xs">
-                      Captured for future use — the database does not store room yet.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nc-capacity">Capacity (optional)</Label>
-                    <Input
-                      id="nc-capacity"
-                      inputMode="numeric"
-                      value={capacity}
-                      onChange={(e) => setCapacity(e.target.value)}
-                      placeholder="e.g. 28"
-                      autoComplete="off"
-                    />
-                    <p className="text-muted-foreground text-xs">
-                      Captured for future use — not persisted without a schema change.
-                    </p>
-                  </div>
                 </div>
 
                 <div className="space-y-3">

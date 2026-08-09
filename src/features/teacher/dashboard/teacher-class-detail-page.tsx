@@ -53,16 +53,16 @@ function QuickLink({
 }
 
 function rosterActions(row: TeacherRosterStudent) {
-  const gradesHref = `${BASE}/students/${row.studentId}/grades`;
+  const academicsHref = `${BASE}/students/${row.studentId}/academics`;
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <QuickLink href={`${BASE}/students/${row.studentId}/overview`}>
         <User className="mr-1 size-3.5 shrink-0" aria-hidden />
         Overview
       </QuickLink>
-      <QuickLink href={gradesHref}>
+      <QuickLink href={academicsHref}>
         <PenLine className="mr-1 size-3.5 shrink-0" aria-hidden />
-        Grades
+        Academics
       </QuickLink>
       <QuickLink href={`${BASE}/students/${row.studentId}/transition-notes`}>
         <NotebookPen className="mr-1 size-3.5 shrink-0" aria-hidden />
@@ -113,7 +113,7 @@ export async function TeacherClassDetailPageContent({ classId }: { classId: stri
           <>
             {classSummary.gradeName} · {classSummary.schoolYearLabel}
             {classSummary.section ? ` · ${classSummary.section}` : ""}. Report card
-            completion uses the latest school year label
+            completion uses the Current school year label
             {currentSchoolYearLabel ? (
               <>
                 :{" "}

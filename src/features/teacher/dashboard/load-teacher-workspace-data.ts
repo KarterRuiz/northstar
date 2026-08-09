@@ -2,9 +2,14 @@ import "server-only";
 
 import { cache } from "react";
 
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/auth/session";
+import { loadCurrentSchoolYearLabel } from "@/lib/school-years/current-school-year";
 
 type SchoolYearEmbed = { label: string; starts_on: string } | null;
 type GradeEmbed = { name: string } | null;
@@ -108,28 +113,24 @@ export type TeacherWorkspaceData =
     }
   | { ok: false; message: string };
 
-async function loadLatestSchoolYearLabel(
+async function resolveCurrentSchoolYearLabel(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("school_years")
-    .select("label")
-    .order("starts_on", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data?.label?.trim()) return null;
-  return data.label.trim();
+): Promise<{ label: string | null; error: string | null }> {
+  const result = await loadCurrentSchoolYearLabel(supabase);
+  if (!result.ok) return { label: null, error: result.error };
+  return { label: result.label, error: null };
 }
 
 /**
- * Teacher workspace: classes from `class_teachers` for the signed-in user,
- * rosters from `student_enrollments` restricted to those class ids (active only).
- * Completion flags use `transition_notes` (submitted) and `report_card_files` (current school year label).
+ * Teacher workspace: classes from `class_teachers` for the signed-in user.
+ * When they have no class assignments but do have `staff_grade_levels`, surfaces
+ * active classes in those grades (grade-only workspace). Rosters stay scoped to
+ * the resulting class ids. Completion flags use transition notes + report cards.
  */
 export const loadTeacherWorkspaceData = cache(
   async (): Promise<TeacherWorkspaceData> => {
     if (!isSupabaseConfigured()) {
-      return { ok: false, message: "Supabase is not configured." };
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const user = await getUser();
@@ -159,7 +160,8 @@ export const loadTeacherWorkspaceData = cache(
       .eq("teacher_profile_id", user.id);
 
     if (ctError) {
-      return { ok: false, message: ctError.message };
+      logServerError("teacher-workspace.loadClassTeachers", ctError.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const assigned: TeacherAssignedClassSummary[] = [];
@@ -181,6 +183,57 @@ export const loadTeacherWorkspaceData = cache(
       });
     }
 
+    // Grade-only: no class_teachers rows → classes in assigned grade levels.
+    if (assigned.length === 0) {
+      const { data: gradeRows, error: gradeErr } = await supabase
+        .from("staff_grade_levels")
+        .select("grade_level_id")
+        .eq("profile_id", user.id);
+
+      if (gradeErr) {
+        logServerError("teacher-workspace.loadStaffGradeLevels", gradeErr.message);
+        return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
+      }
+
+      const gradeIds = [...new Set((gradeRows ?? []).map((r) => r.grade_level_id))];
+      if (gradeIds.length > 0) {
+        const { data: gradeClasses, error: gcErr } = await supabase
+          .from("classes")
+          .select(
+            `
+            id,
+            name,
+            section,
+            is_active,
+            school_years ( label, starts_on ),
+            grade_levels ( name )
+          `,
+          )
+          .eq("is_active", true)
+          .in("grade_level_id", gradeIds);
+
+        if (gcErr) {
+          logServerError("teacher-workspace.loadGradeClasses", gcErr.message);
+          return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
+        }
+
+        for (const klass of (gradeClasses ?? []) as unknown as ClassEmbed[]) {
+          if (!klass?.id || klass.is_active === false) continue;
+          classIdSet.add(klass.id);
+          assigned.push({
+            id: klass.id,
+            name: klass.name?.trim() || "Class",
+            section: klass.section?.trim() || null,
+            gradeName: gradeLabel(klass),
+            schoolYearLabel: schoolYearLabel(klass),
+            isActive: klass.is_active,
+            assignmentRole: "grade_access",
+            studentCount: 0,
+          });
+        }
+      }
+    }
+
     assigned.sort((a, b) =>
       summaryClassLabel(a).localeCompare(summaryClassLabel(b), undefined, {
         sensitivity: "base",
@@ -189,10 +242,13 @@ export const loadTeacherWorkspaceData = cache(
 
     const classIds = [...classIdSet];
     if (classIds.length === 0) {
-      const yearLabel = await loadLatestSchoolYearLabel(supabase);
+      const yearRes = await resolveCurrentSchoolYearLabel(supabase);
+      if (yearRes.error) {
+        return { ok: false, message: yearRes.error };
+      }
       return {
         ok: true,
-        currentSchoolYearLabel: yearLabel,
+        currentSchoolYearLabel: yearRes.label,
         classes: [],
         roster: [],
         warnings,
@@ -218,7 +274,8 @@ export const loadTeacherWorkspaceData = cache(
       .in("class_id", classIds);
 
     if (enError) {
-      return { ok: false, message: enError.message };
+      logServerError("teacher-workspace.loadEnrollments", enError.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const classMeta = new Map(
@@ -261,7 +318,11 @@ export const loadTeacherWorkspaceData = cache(
     });
 
     const distinctStudentIds = [...new Set(roster.map((r) => r.studentId))];
-    const currentSchoolYearLabel = await loadLatestSchoolYearLabel(supabase);
+    const yearRes = await resolveCurrentSchoolYearLabel(supabase);
+    if (yearRes.error) {
+      return { ok: false, message: yearRes.error };
+    }
+    const currentSchoolYearLabel = yearRes.label;
 
     const submittedByStudent = new Set<string>();
     const reportCardByStudent = new Set<string>();
@@ -287,15 +348,19 @@ export const loadTeacherWorkspaceData = cache(
 
       const [tnRes, rcRes] = await Promise.all([tnPromise, rcPromise]);
 
-      if (tnRes.error) warnings.push(tnRes.error.message);
-      else {
+      if (tnRes.error) {
+        logServerError("teacher-workspace.transitionNotes", tnRes.error.message);
+        warnings.push(GENERIC_INFORMATION_LOAD_ERROR);
+      } else {
         for (const row of tnRes.data ?? []) {
           submittedByStudent.add(row.student_id);
         }
       }
 
-      if (rcRes.error) warnings.push(rcRes.error.message);
-      else {
+      if (rcRes.error) {
+        logServerError("teacher-workspace.reportCards", rcRes.error.message);
+        warnings.push(GENERIC_INFORMATION_LOAD_ERROR);
+      } else {
         for (const row of rcRes.data ?? []) {
           reportCardByStudent.add(row.student_id);
         }
@@ -304,7 +369,7 @@ export const loadTeacherWorkspaceData = cache(
 
     if (!currentSchoolYearLabel) {
       warnings.push(
-        "No school year found; report card completion is shown as incomplete until a year exists.",
+        "No Current school year is set; report card completion is shown as incomplete until one is designated in School Settings.",
       );
     }
 

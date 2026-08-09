@@ -35,7 +35,7 @@ export function TopBar({ switcherRoles }: TopBarProps) {
   const crumbs = getBreadcrumbs(pathname);
 
   return (
-    <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 flex h-14 items-center gap-3 border-b px-4 backdrop-blur transition-colors duration-150">
+    <header className="bg-background sticky top-0 z-40 flex h-14 items-center gap-3 border-b px-4 transition-colors duration-150 ease-out">
       <MobileNav pathname={pathname} switcherRoles={switcherRoles} />
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Separator orientation="vertical" className="hidden h-6 lg:block" />

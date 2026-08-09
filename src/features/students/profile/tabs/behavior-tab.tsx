@@ -122,7 +122,7 @@ export async function BehaviorTab({ studentId, role }: BehaviorTabProps) {
         <CardContent className="pt-6">
           <ProfileEmptyState
             icon={Heart}
-            title="Student support unavailable"
+            title="Behavior data unavailable"
             description={data.message}
           />
         </CardContent>

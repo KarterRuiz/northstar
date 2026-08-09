@@ -26,9 +26,8 @@ export default async function TransitionNotesIndexPage({ params }: PageProps) {
           Transition notes
         </h1>
         <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          Drafts and submissions are stored in Supabase. Teachers pick a student,
-          compose on the new note page, and submitted notes appear on the student
-          profile for leadership review.
+          Teachers compose handoff notes for a student; submitted notes appear on
+          the student profile for leadership review.
         </p>
       </div>
 

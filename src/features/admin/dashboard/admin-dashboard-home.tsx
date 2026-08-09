@@ -1,71 +1,67 @@
 import { Suspense } from "react";
-import Link from "next/link";
 
+import { isLeadershipAuditRole, type Role } from "@/config/roles";
 import { siteConfig } from "@/config/site";
+import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import { AdminDashboardSkeleton } from "@/features/admin/dashboard/admin-dashboard-skeleton";
 import { AdminDashboardStats } from "@/features/admin/dashboard/admin-dashboard-stats";
+import { AdminNeedsAttention } from "@/features/admin/dashboard/admin-needs-attention";
+import { AdminRecentActivity } from "@/features/admin/dashboard/admin-recent-activity";
+import { StaffTodayPanel } from "@/features/admin/dashboard/staff-today-panel";
+import { getProfileRole, getUser } from "@/lib/auth/session";
 
-const linkClass =
-  "text-primary font-medium underline-offset-4 transition-colors duration-150 hover:underline";
-
-export function AdminDashboardHome() {
+function ActionLayerSkeleton() {
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
+    <div
+      className="space-y-3"
+      aria-busy="true"
+      aria-label="Loading needs attention"
+    >
+      <div className="space-y-1.5">
+        <Skeleton className="h-3 w-14" />
+        <Skeleton className="h-5 w-40" />
+      </div>
+      <Skeleton className="h-16 w-full rounded-lg" />
+    </div>
+  );
+}
+
+/**
+ * Admin overview — calm executive command center.
+ * Uses NorthStar page shell + Workspace headers; destinations live in the sidebar.
+ */
+export async function AdminDashboardHome() {
+  const user = await getUser();
+  const profileRole = user ? await getProfileRole(user.id) : null;
+  const role: Role =
+    profileRole && isLeadershipAuditRole(profileRole) ? profileRole : "admin";
+
+  return (
+    <div className="ns-page-shell">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
-        title="Admin overview"
-        description={
-          <>
-            Live operations snapshot from your Supabase project. Summary metrics
-            and recent activity respect row-level security for your organization.
-          </>
-        }
-        footer={
-          <span className="flex flex-wrap items-center gap-x-1 gap-y-1">
-            <Link href="/dashboard/admin/academic-review" className={linkClass}>
-              Academic review
-            </Link>
-            <span className="text-muted-foreground/60" aria-hidden>
-              ·
-            </span>
-            <Link href="/dashboard/admin/attendance" className={linkClass}>
-              Attendance monitoring
-            </Link>
-            <span className="text-muted-foreground/60" aria-hidden>
-              ·
-            </span>
-            <Link href="/dashboard/admin/school-settings#academic-structure" className={linkClass}>
-              Academic structure (years & grades)
-            </Link>
-            <span className="text-muted-foreground/60" aria-hidden>
-              ·
-            </span>
-            <Link href="/dashboard/admin/classes" className={linkClass}>
-              Classes & teacher assignments
-            </Link>
-            <span className="text-muted-foreground/60" aria-hidden>
-              ·
-            </span>
-            <Link href="/dashboard/admin/teachers" className={linkClass}>
-              Staff directory & roles
-            </Link>
-            <span className="text-muted-foreground/60" aria-hidden>
-              ·
-            </span>
-            <Link
-              href="/dashboard/admin/students/f47ac10b-58cc-4372-a567-0e02b2c3d479/report-cards"
-              className={linkClass}
-            >
-              Sample student profile (report cards)
-            </Link>
-          </span>
-        }
+        title="Overview"
+        description="Priorities, metrics, and recent activity."
       />
 
-      <Suspense fallback={<AdminDashboardSkeleton />}>
-        <AdminDashboardStats />
-      </Suspense>
+      <div className="space-y-8 sm:space-y-10">
+        <Suspense fallback={<ActionLayerSkeleton />}>
+          <AdminNeedsAttention />
+        </Suspense>
+
+        <Suspense fallback={<ActionLayerSkeleton />}>
+          <StaffTodayPanel role={role} />
+        </Suspense>
+
+        <Suspense fallback={<AdminDashboardSkeleton />}>
+          <AdminDashboardStats />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <AdminRecentActivity />
+        </Suspense>
+      </div>
     </div>
   );
 }

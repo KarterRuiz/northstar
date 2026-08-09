@@ -495,6 +495,7 @@ export type Database = {
           name: string;
           sort_order: number;
           code: string | null;
+          is_archived: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -503,6 +504,7 @@ export type Database = {
           name: string;
           sort_order: number;
           code?: string | null;
+          is_archived?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -511,6 +513,7 @@ export type Database = {
           name?: string;
           sort_order?: number;
           code?: string | null;
+          is_archived?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -863,6 +866,156 @@ export type Database = {
         };
         Relationships: [];
       };
+      staff_members: {
+        Row: {
+          id: string;
+          first_name: string;
+          last_name: string;
+          full_name: string;
+          email: string | null;
+          role: string;
+          status: "draft" | "ready" | "disabled" | "archived";
+          notes: string | null;
+          profile_id: string | null;
+          created_by: string | null;
+          archived_at: string | null;
+          last_activity_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          first_name: string;
+          last_name: string;
+          full_name?: string;
+          email?: string | null;
+          role: string;
+          status?: "draft" | "ready" | "disabled" | "archived";
+          notes?: string | null;
+          profile_id?: string | null;
+          created_by?: string | null;
+          archived_at?: string | null;
+          last_activity_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          first_name?: string;
+          last_name?: string;
+          full_name?: string;
+          email?: string | null;
+          role?: string;
+          status?: "draft" | "ready" | "disabled" | "archived";
+          notes?: string | null;
+          profile_id?: string | null;
+          created_by?: string | null;
+          archived_at?: string | null;
+          last_activity_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      staff_member_grade_levels: {
+        Row: {
+          id: string;
+          staff_member_id: string;
+          grade_level_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_member_id: string;
+          grade_level_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          staff_member_id?: string;
+          grade_level_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      staff_member_classes: {
+        Row: {
+          id: string;
+          staff_member_id: string;
+          class_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_member_id: string;
+          class_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          staff_member_id?: string;
+          class_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      staff_attendance: {
+        Row: {
+          id: string;
+          staff_member_id: string;
+          attendance_date: string;
+          status:
+            | "present"
+            | "absent"
+            | "late"
+            | "approved_leave"
+            | "sick"
+            | "professional_development"
+            | "off_campus"
+            | "not_recorded";
+          notes: string | null;
+          recorded_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_member_id: string;
+          attendance_date: string;
+          status:
+            | "present"
+            | "absent"
+            | "late"
+            | "approved_leave"
+            | "sick"
+            | "professional_development"
+            | "off_campus"
+            | "not_recorded";
+          notes?: string | null;
+          recorded_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          staff_member_id?: string;
+          attendance_date?: string;
+          status?:
+            | "present"
+            | "absent"
+            | "late"
+            | "approved_leave"
+            | "sick"
+            | "professional_development"
+            | "off_campus"
+            | "not_recorded";
+          notes?: string | null;
+          recorded_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       staff_invitations: {
         Row: {
           id: string;
@@ -877,8 +1030,12 @@ export type Database = {
           invite_token: string;
           expires_at: string;
           accepted_at: string | null;
+          sent_at: string | null;
+          opened_at: string | null;
+          staff_member_id: string | null;
           staff_note: string | null;
           pending_class_ids: string[];
+          pending_grade_level_ids: string[];
           created_at: string;
           updated_at: string;
         };
@@ -895,8 +1052,12 @@ export type Database = {
           invite_token?: string;
           expires_at?: string;
           accepted_at?: string | null;
+          sent_at?: string | null;
+          opened_at?: string | null;
+          staff_member_id?: string | null;
           staff_note?: string | null;
           pending_class_ids?: string[];
+          pending_grade_level_ids?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -913,10 +1074,35 @@ export type Database = {
           invite_token?: string;
           expires_at?: string;
           accepted_at?: string | null;
+          sent_at?: string | null;
+          opened_at?: string | null;
+          staff_member_id?: string | null;
           staff_note?: string | null;
           pending_class_ids?: string[];
+          pending_grade_level_ids?: string[];
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      staff_grade_levels: {
+        Row: {
+          id: string;
+          profile_id: string;
+          grade_level_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          grade_level_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          profile_id?: string;
+          grade_level_id?: string;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -926,6 +1112,8 @@ export type Database = {
           label: string;
           starts_on: string;
           ends_on: string;
+          is_current: boolean;
+          archived_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -934,12 +1122,49 @@ export type Database = {
           label: string;
           starts_on: string;
           ends_on: string;
+          is_current?: boolean;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           label?: string;
+          starts_on?: string;
+          ends_on?: string;
+          is_current?: boolean;
+          archived_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      terms: {
+        Row: {
+          id: string;
+          school_year_id: string;
+          name: string;
+          code: string;
+          starts_on: string;
+          ends_on: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          school_year_id: string;
+          name: string;
+          code: string;
+          starts_on: string;
+          ends_on: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          school_year_id?: string;
+          name?: string;
+          code?: string;
           starts_on?: string;
           ends_on?: string;
           created_at?: string;
@@ -959,6 +1184,14 @@ export type Database = {
       };
       teacher_can_access_student: {
         Args: { p_student_id: string };
+        Returns: boolean;
+      };
+      teacher_can_access_class: {
+        Args: { p_class_id: string };
+        Returns: boolean;
+      };
+      teacher_has_explicit_class_assignments: {
+        Args: Record<string, never>;
         Returns: boolean;
       };
       teacher_create_student_for_class: {

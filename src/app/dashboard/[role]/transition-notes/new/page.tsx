@@ -125,8 +125,8 @@ export default async function NewTransitionNotePage({ params, searchParams }: Pa
               New transition note
             </h1>
             <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed sm:text-base">
-              Drafts and submissions are saved to Supabase. After you submit, edits
-              stay locked until an administrator or school leader reopens the note.
+              Save a draft anytime. After you submit, the note stays locked until an
+              administrator or school leader reopens it.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">

@@ -8,37 +8,40 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import {
+  STUDENT_PROFILE_TAB_IDS,
+  STUDENT_PROFILE_TAB_SEGMENT_ALIASES,
   isStudentProfileTabId,
   type StudentProfileTabId,
 } from "./constants";
 
 const TAB_LABELS: Record<StudentProfileTabId, string> = {
   overview: "Overview",
-  grades: "Grades",
+  academics: "Academics",
   attendance: "Attendance",
-  behavior: "Student support",
-  "transition-notes": "Transition notes",
-  "report-cards": "Report cards",
-  growth: "Growth",
+  behavior: "Behavior",
   interventions: "Interventions",
-  files: "Files",
+  "parent-communication": "Parent communication",
+  documents: "Documents",
+  "report-cards": "Report cards",
+  "transition-notes": "Transition notes",
   "audit-history": "Audit history",
 };
 
 const TAB_HINTS: Record<StudentProfileTabId, string> = {
   overview:
-    "Running grade, missing work, attendance and support summaries, report readiness, and notes at a glance.",
-  grades:
-    "Read-only gradebook summary for this student's class — same calculations as the class gradebook.",
+    "Pulse check: attendance, support, interventions, family requests, and report readiness.",
+  academics:
+    "Class gradebook summary plus structured academic records — same calculations as the class view.",
   attendance: "Term absences, tardies, recent marks, and attendance pattern indicators.",
-  behavior: "Support moments, strengths, strategies, and follow-ups from class.",
-  "transition-notes": "Program handoffs and continuity notes when recorded.",
+  behavior: "Strengths, strategies, support moments, and follow-ups from class.",
+  interventions: "Active supports, academic flags, and intervention timelines.",
+  "parent-communication":
+    "Formal parent record requests and classroom-documented caregiver communication.",
+  documents: "File labels, storage paths, and (where permitted) report card uploads.",
   "report-cards":
     "Official PDFs (draft, final, or archived) with audited, short-lived signed download links.",
-  growth: "Developmental progress and goals (placeholder).",
-  interventions: "Active supports, academic flags, and intervention timelines.",
-  files: "Labels and storage paths for files tied to this student.",
-  "audit-history": "Who did what, when—limited to leadership and admin roles.",
+  "transition-notes": "Program handoffs and continuity notes when recorded.",
+  "audit-history": "Who did what, when — limited to leadership and admin roles.",
 };
 
 type StudentProfileTabsProps = {
@@ -48,6 +51,8 @@ type StudentProfileTabsProps = {
 
 function activeTabFromPath(pathname: string): StudentProfileTabId {
   const last = pathname.split("/").filter(Boolean).pop() ?? "";
+  const aliased = STUDENT_PROFILE_TAB_SEGMENT_ALIASES[last];
+  if (aliased) return aliased;
   return isStudentProfileTabId(last) ? last : "overview";
 }
 
@@ -60,7 +65,7 @@ export function StudentProfileTabs({ role, studentId }: StudentProfileTabsProps)
 
   const value = activeTabFromPath(pathname);
   const base = `/dashboard/${role}/students/${studentId}`;
-  const tabIds = (Object.keys(TAB_LABELS) as StudentProfileTabId[]).filter(
+  const tabIds = STUDENT_PROFILE_TAB_IDS.filter(
     (id) => id !== "audit-history" || isLeadershipAuditRole(role),
   );
 

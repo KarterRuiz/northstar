@@ -7,50 +7,54 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { InviteStaffSheet } from "@/features/admin/staff-directory/invite-staff-sheet";
-import type { ClassInviteOption } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
+import { AddStaffSheet } from "@/features/admin/staff-directory/add-staff-sheet";
+import type {
+  ClassInviteOption,
+  GradeInviteOption,
+} from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import type { StaffInvitationRow } from "@/features/admin/staff-directory/staff-invitations-queries";
 import { StaffInvitationsTable } from "@/features/admin/staff-directory/staff-invitations-table";
 
 type StaffOnboardingSectionProps = {
   invitations: StaffInvitationRow[];
   invitationsError: string | null;
+  gradeOptions: GradeInviteOption[];
   classOptions: ClassInviteOption[];
   loginBaseUrl: string;
 };
 
+/**
+ * Legacy invitations panel. Prefer the master Staff directory + Send invitations flow.
+ * Kept for backward-compatible embeds that still list pending invitation tokens.
+ */
 export function StaffOnboardingSection({
   invitations,
   invitationsError,
+  gradeOptions,
   classOptions,
   loginBaseUrl,
 }: StaffOnboardingSectionProps) {
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1.5">
-          <CardTitle>Staff onboarding</CardTitle>
+      <CardHeader
+        density="compact"
+        className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+      >
+        <div className="space-y-1">
+          <CardTitle>Staff invitations</CardTitle>
           <CardDescription>
-            Invite colleagues, copy sign-in links, and track pending access. When someone signs in
-            with the invited email, their profile and role update automatically. Optional class
-            picks apply for teachers on first login.
+            Add staff to the roster first, then send invitations when they should activate.
           </CardDescription>
         </div>
-        <InviteStaffSheet classOptions={classOptions} />
+        <AddStaffSheet gradeOptions={gradeOptions} classOptions={classOptions} />
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="bg-muted/40 text-muted-foreground rounded-lg border px-4 py-3 text-sm leading-relaxed">
-          <p className="text-foreground font-medium">If email delivery fails</p>
-          <p className="mt-1">
-            The invitation is still saved. Use <strong>Copy recovery link</strong> on the row, or
-            the links shown after you submit the invite form. They should sign in with the same
-            email address you invited so their access syncs.
-          </p>
-        </div>
+      <CardContent density="compact">
         <StaffInvitationsTable
           rows={invitations}
           error={invitationsError}
           loginBaseUrl={loginBaseUrl}
+          gradeOptions={gradeOptions}
+          classOptions={classOptions}
         />
       </CardContent>
     </Card>

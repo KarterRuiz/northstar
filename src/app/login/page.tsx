@@ -23,6 +23,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const profileError = params.error === "profile";
+  const deactivatedError = params.error === "deactivated";
   const inviteHint = await loadStaffInviteLoginHint(params.staff_invite);
 
   return (
@@ -40,19 +41,27 @@ export default async function LoginPage({
               className="bg-muted/50 text-muted-foreground rounded-lg border px-3 py-2 text-sm"
               role="status"
             >
-              <p className="text-foreground font-medium">You have a pending invitation</p>
+              <p className="text-foreground font-medium">
+                Welcome, {inviteHint.fullName}
+              </p>
               <p className="mt-1">
-                Sign in with <span className="text-foreground font-medium">{inviteHint.emailHint}</span>{" "}
-                ({inviteHint.fullName}) using the password for that account.
+                Confirm you are signing in as{" "}
+                <span className="text-foreground font-medium">{inviteHint.emailHint}</span>.
+                Create your password from the invite email if you have not yet, then sign in.
+                Your role and class access were already assigned by your school.
               </p>
             </div>
           ) : null}
+          {deactivatedError ? (
+            <p className="text-destructive text-sm">
+              This account has been deactivated. Contact your school administrator if you need
+              access restored.
+            </p>
+          ) : null}
           {profileError ? (
             <p className="text-destructive text-sm">
-              Your account has no valid role in{" "}
-              <code className="text-xs">profiles.role</code>. Ask an admin to
-              assign one of: admin, teacher, registrar, principal, or
-              vice_principal.
+              Your account does not have a valid school role yet. Ask an administrator
+              to assign one (admin, teacher, registrar, principal, or vice principal).
             </p>
           ) : null}
           <LoginForm action={signInWithPassword} initialState={initialSignInState} />

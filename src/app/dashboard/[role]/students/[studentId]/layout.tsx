@@ -11,10 +11,12 @@ import {
   type Role,
 } from "@/config/roles";
 import { Button } from "@/components/ui/button";
+import { StudentProfileFooter } from "@/features/students/profile/student-profile-footer";
 import { StudentProfileHeader } from "@/features/students/profile/student-profile-header";
 import { StudentProfileIndicators } from "@/features/students/profile/student-profile-indicators";
 import { StudentProfileNav } from "@/features/students/profile/student-profile-nav";
 import { StudentProfileTabs } from "@/features/students/profile/student-profile-tabs";
+import { loadStudentShellMetrics } from "@/features/students/profile/load-student-shell-metrics";
 import { loadStudentProfileResult } from "@/features/students/profile/supabase-profile-data";
 import { recordAuditEvent } from "@/lib/audit";
 import { getUser } from "@/lib/auth/session";
@@ -55,21 +57,25 @@ export default async function StudentProfileLayout({
     notFound();
   }
 
+  let shellMetrics: Awaited<ReturnType<typeof loadStudentShellMetrics>> | null = null;
   if (profileLoad.kind === "ok") {
     const user = await getUser();
-    await recordAuditEvent({
-      action: "student_profile_viewed",
-      metadata: { studentId },
-      actorUserId: user?.id,
-    });
+    const [, metrics] = await Promise.all([
+      recordAuditEvent({
+        action: "student_profile_viewed",
+        metadata: { studentId },
+        actorUserId: user?.id,
+      }),
+      loadStudentShellMetrics(studentId, role),
+    ]);
+    shellMetrics = metrics;
   }
 
   const hubHint =
-    "Report card PDFs live in the private Supabase bucket report-cards; " +
-    "downloads use short-lived signed URLs when your role has storage access.";
+    "Report card PDFs are stored securely. Downloads are available when your role has access.";
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
       {profileLoad.kind === "error" ? (
         <div
           className="border-destructive/50 bg-destructive/10 text-destructive rounded-md border px-4 py-3 text-sm"
@@ -93,6 +99,7 @@ export default async function StudentProfileLayout({
               hubHint={hubHint}
               routeStudentId={studentId}
               viewerRoleLabel={roleLabels[role]}
+              shellMetrics={shellMetrics}
               actions={
                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
                   {canManageParentRecordRequests(role) ? (
@@ -119,6 +126,7 @@ export default async function StudentProfileLayout({
           <div className="border-border/60 space-y-6 border-t px-6 pt-5 pb-8 sm:px-8">
             <StudentProfileTabs role={role} studentId={studentId} />
             <div>{children}</div>
+            <StudentProfileFooter role={role} studentId={studentId} />
           </div>
         </section>
       ) : (

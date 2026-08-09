@@ -14,16 +14,27 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
-import { loadActiveClassesForStaffInvite } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
-import { StaffDirectoryTable } from "@/features/admin/staff-directory/staff-directory-table";
 import {
-  fetchClassAssignmentsForTeachers,
+  DirectoryToolbar,
+  DirectoryToolbarFilters,
+  DirectoryToolbarSearch,
+} from "@/components/workspace/directory-toolbar";
+import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
+import { AddStaffSheet } from "@/features/admin/staff-directory/add-staff-sheet";
+import { loadStaffInviteAccessOptions } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
+import { SendInvitationsDialog } from "@/features/admin/staff-directory/send-invitations-dialog";
+import { StaffDirectoryTable } from "@/features/admin/staff-directory/staff-directory-table";
+import { StaffDirectorySummaryStrip } from "@/features/admin/staff-directory/staff-directory-summary";
+import {
+  fetchClassAssignmentsForStaffMembers,
+  fetchGradeAccessForStaffMembers,
   fetchStaffDirectoryPage,
+  fetchStaffDirectorySummary,
+  fetchStaffInviteCandidates,
 } from "@/features/admin/staff-directory/staff-directory-queries";
-import { fetchStaffInvitations } from "@/features/admin/staff-directory/staff-invitations-queries";
-import { StaffOnboardingSection } from "@/features/admin/staff-directory/staff-onboarding-section";
+import { fetchStaffDeletabilityMap } from "@/features/admin/staff-directory/staff-lifecycle";
 import { staffDirectoryPath } from "@/features/admin/staff-directory/staff-directory-path";
+import type { StaffRosterDisplayStatus } from "@/lib/staff/staff-roster-status";
 import { getStaffDirectoryManagerActor } from "@/lib/auth/require-staff-directory-manager";
 import { getAuthEmailRedirectToLogin } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -44,7 +55,12 @@ type PageProps = {
 
 function staffTeachersHref(
   role: Role,
-  next: { page: number; q: string; role: Role | ""; status: "all" | "active" | "inactive" },
+  next: {
+    page: number;
+    q: string;
+    role: Role | "";
+    status: "all" | StaffRosterDisplayStatus;
+  },
 ): string {
   const sp = new URLSearchParams();
   if (next.page > 1) sp.set("page", String(next.page));
@@ -56,6 +72,21 @@ function staffTeachersHref(
   return qs ? `${base}?${qs}` : base;
 }
 
+const selectClassName =
+  "border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-2 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none";
+
+const STATUS_FILTER_OPTIONS: { value: "all" | StaffRosterDisplayStatus; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "draft", label: "Draft / Not Invited" },
+  { value: "ready", label: "Ready" },
+  { value: "invitation_sent", label: "Invitation Sent" },
+  { value: "opened", label: "Opened" },
+  { value: "accepted", label: "Accepted" },
+  { value: "active", label: "Active" },
+  { value: "disabled", label: "Disabled" },
+  { value: "archived", label: "Archived" },
+];
+
 export default async function StaffDirectoryPage({ params, searchParams }: PageProps) {
   const { role: roleParam } = await params;
   if (!isRole(roleParam) || !canManageStaffDirectory(roleParam)) notFound();
@@ -65,11 +96,13 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
   if (!actor) notFound();
 
   const sp = await searchParams;
-  const [directory, invitationsResult, classOptions] = await Promise.all([
+  const [directory, summary, accessOptions, inviteCandidates] = await Promise.all([
     fetchStaffDirectoryPage(sp),
-    fetchStaffInvitations(),
-    loadActiveClassesForStaffInvite(),
+    fetchStaffDirectorySummary(),
+    loadStaffInviteAccessOptions(),
+    fetchStaffInviteCandidates(),
   ]);
+  const { grades: gradeOptions, classes: classOptions } = accessOptions;
 
   let loginBaseUrl: string;
   try {
@@ -78,16 +111,35 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
     loginBaseUrl = "http://localhost:3000/login";
   }
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(directory.totalCount / directory.pageSize),
-  );
+  const totalPages = Math.max(1, Math.ceil(directory.totalCount / directory.pageSize));
   const page = Math.min(directory.page, totalPages);
   const from = directory.totalCount === 0 ? 0 : (page - 1) * directory.pageSize + 1;
   const to = Math.min(directory.totalCount, page * directory.pageSize);
 
-  const teacherIdsOnPage = directory.rows.filter((r) => r.role === "teacher").map((r) => r.id);
-  const assignmentsByTeacher = await fetchClassAssignmentsForTeachers(teacherIdsOnPage);
+  const memberIdsOnPage = directory.rows.map((r) => r.id);
+  const candidateIds = inviteCandidates.map((c) => c.id);
+  const accessIds = [...new Set([...memberIdsOnPage, ...candidateIds])];
+
+  const profileIdsForDelete = directory.rows
+    .filter((r) => r.displayStatus === "disabled" && r.profile_id)
+    .map((r) => r.profile_id!) ;
+
+  const [assignmentsByMember, gradesByMember, deletableMap] = await Promise.all([
+    fetchClassAssignmentsForStaffMembers(accessIds),
+    fetchGradeAccessForStaffMembers(accessIds),
+    fetchStaffDeletabilityMap(supabase, profileIdsForDelete),
+  ]);
+
+  const deletableByStaffMemberId: Record<string, boolean> = {};
+  for (const row of directory.rows) {
+    if (!row.profile_id) {
+      deletableByStaffMemberId[row.id] = true;
+    } else if (row.displayStatus === "disabled") {
+      deletableByStaffMemberId[row.id] = deletableMap.get(row.profile_id) ?? false;
+    } else {
+      deletableByStaffMemberId[row.id] = false;
+    }
+  }
 
   const prevHref =
     page > 1
@@ -111,14 +163,13 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
   const overviewHref = `/dashboard/${roleParam}`;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 p-6 sm:p-8">
+    <div className="ns-page-shell-wide">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="Teachers & staff"
         description={
           <>
-            Search staff, manage roles and access, invite new colleagues, and assign teachers to
-            classes. Your role:{" "}
+            Build the school roster first, then invite people to activate access. Your role:{" "}
             <span className="text-foreground font-medium">{roleLabels[roleParam]}</span>.
           </>
         }
@@ -132,77 +183,93 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
         }
       />
 
-      <StaffOnboardingSection
-        invitations={invitationsResult.rows}
-        invitationsError={invitationsResult.error}
-        classOptions={classOptions}
-        loginBaseUrl={loginBaseUrl}
-      />
-
       <Card>
-        <CardHeader>
-          <CardTitle>Staff directory</CardTitle>
-          <CardDescription>
-            {directory.totalCount === 0
-              ? "No profiles match these filters."
-              : `Showing ${from}–${to} of ${directory.totalCount} (page ${page} of ${totalPages}).`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form method="GET" className="flex flex-col gap-3 border-b pb-4 md:flex-row md:flex-wrap md:items-end">
-            <div className="grid w-full gap-3 sm:grid-cols-2 md:max-w-xl md:flex-1">
-              <div className="space-y-1.5">
-                <Label htmlFor="staff-filter-q">Search name or email</Label>
+        <CardHeader density="compact" className="space-y-3 pb-3 sm:pb-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <CardTitle>Staff directory</CardTitle>
+              <CardDescription>
+                {directory.totalCount === 0
+                  ? "No staff match these filters."
+                  : `Showing ${from}–${to} of ${directory.totalCount}`}
+              </CardDescription>
+            </div>
+            <div className="flex flex-col items-stretch gap-3 sm:items-end">
+              <StaffDirectorySummaryStrip summary={summary} />
+              <div className="flex flex-wrap gap-2">
+                <SendInvitationsDialog
+                  candidates={inviteCandidates}
+                  gradesByMember={gradesByMember}
+                  classesByMember={assignmentsByMember}
+                  gradeOptions={gradeOptions}
+                />
+                <AddStaffSheet gradeOptions={gradeOptions} classOptions={classOptions} />
+              </div>
+            </div>
+          </div>
+          <form method="GET">
+            <DirectoryToolbar className="border-0 pb-0">
+              <DirectoryToolbarSearch>
+                <Label htmlFor="staff-filter-q" className="sr-only">
+                  Search name or email
+                </Label>
                 <Input
                   id="staff-filter-q"
                   name="q"
                   defaultValue={directory.filters.q}
-                  placeholder="Name or email"
+                  placeholder="Search name or email…"
                   autoComplete="off"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="staff-filter-role">Role</Label>
-                <select
-                  id="staff-filter-role"
-                  name="role"
-                  defaultValue={directory.filters.role || ""}
-                  className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-2 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-                >
-                  <option value="">All roles</option>
-                  {(Object.keys(roleLabels) as Role[]).map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabels[r]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end md:w-auto">
-              <div className="space-y-1.5 sm:min-w-[10rem]">
-                <Label htmlFor="staff-filter-status">Access status</Label>
-                <select
-                  id="staff-filter-status"
-                  name="status"
-                  defaultValue={directory.filters.status}
-                  className="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-2 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="active">Active only</option>
-                  <option value="inactive">Inactive only</option>
-                </select>
-              </div>
-              <div className="flex flex-wrap gap-2">
+              </DirectoryToolbarSearch>
+              <DirectoryToolbarFilters>
+                <div className="w-full sm:w-36">
+                  <Label htmlFor="staff-filter-role" className="sr-only">
+                    Role
+                  </Label>
+                  <select
+                    id="staff-filter-role"
+                    name="role"
+                    defaultValue={directory.filters.role || ""}
+                    className={selectClassName}
+                    aria-label="Filter by role"
+                  >
+                    <option value="">All roles</option>
+                    {(Object.keys(roleLabels) as Role[]).map((r) => (
+                      <option key={r} value={r}>
+                        {roleLabels[r]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-full sm:w-44">
+                  <Label htmlFor="staff-filter-status" className="sr-only">
+                    Invitation status
+                  </Label>
+                  <select
+                    id="staff-filter-status"
+                    name="status"
+                    defaultValue={directory.filters.status}
+                    className={selectClassName}
+                    aria-label="Filter by invitation status"
+                  >
+                    {STATUS_FILTER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <Button type="submit" size="sm">
-                  Apply filters
+                  Apply
                 </Button>
                 <Button type="button" variant="outline" size="sm" asChild>
                   <Link href={staffDirectoryPath(roleParam)}>Reset</Link>
                 </Button>
-              </div>
-            </div>
+              </DirectoryToolbarFilters>
+            </DirectoryToolbar>
           </form>
-
+        </CardHeader>
+        <CardContent density="compact" className="space-y-4">
           {directory.error ? (
             <div
               className="bg-muted/50 text-muted-foreground rounded-lg border px-4 py-3 text-sm"
@@ -215,15 +282,20 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
 
           <StaffDirectoryTable
             rows={directory.rows}
+            role={actor.role}
             currentUserId={actor.userId}
-            assignmentsByTeacher={assignmentsByTeacher}
+            assignmentsByMember={assignmentsByMember}
+            gradesByMember={gradesByMember}
+            availableGrades={gradeOptions}
             availableClasses={classOptions}
+            deletableByStaffMemberId={deletableByStaffMemberId}
+            loginBaseUrl={loginBaseUrl}
           />
 
           {directory.totalCount > directory.pageSize ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-              <p className="text-muted-foreground text-xs">
-                {directory.pageSize} profiles per page
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+              <p className="ns-meta">
+                Page {page} of {totalPages} · {directory.pageSize} per page
               </p>
               <div className="flex gap-2">
                 {prevHref ? (

@@ -6,12 +6,17 @@ type WorkspacePageHeaderProps = {
   eyebrow: string;
   title: string;
   description?: ReactNode;
-  /** Small meta row under the description (links, hints). */
+  /** Small meta row under the description (links, hints). Keep sparse. */
   footer?: ReactNode;
   actions?: ReactNode;
   className?: string;
 };
 
+/**
+ * Standard page title block for dashboard workspaces.
+ * Pattern: Eyebrow / Title / Description / Primary action.
+ * Prefer this over bespoke h1 stacks. Keep description to one short sentence.
+ */
 export function WorkspacePageHeader({
   eyebrow,
   title,
@@ -23,30 +28,22 @@ export function WorkspacePageHeader({
   return (
     <div
       className={cn(
-        "flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6",
+        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8",
         className,
       )}
     >
-      <div className="min-w-0 space-y-1.5">
-        <p className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-          {eyebrow}
-        </p>
-        <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
-          {title}
-        </h1>
+      <div className="min-w-0 space-y-2">
+        <p className="ns-eyebrow">{eyebrow}</p>
+        <h1 className="ns-page-title">{title}</h1>
         {description ? (
-          <p className="text-muted-foreground max-w-2xl text-sm leading-snug">
-            {description}
-          </p>
+          <div className="ns-page-description">{description}</div>
         ) : null}
-        {footer ? (
-          <div className="text-muted-foreground pt-0.5 text-xs leading-snug">
-            {footer}
-          </div>
-        ) : null}
+        {footer ? <div className="ns-meta pt-0.5">{footer}</div> : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-7">
+          {actions}
+        </div>
       ) : null}
     </div>
   );
@@ -61,6 +58,9 @@ type WorkspaceSectionHeaderProps = {
   className?: string;
 };
 
+/**
+ * Section / card group header. Prefer over duplicating muted helper stacks.
+ */
 export function WorkspaceSectionHeader({
   id,
   title,
@@ -72,30 +72,21 @@ export function WorkspaceSectionHeader({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
+        "flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
         className,
       )}
     >
       <div className="min-w-0 space-y-1">
-        {eyebrow ? (
-          <p className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h2
-          id={id}
-          className="text-foreground text-base font-semibold tracking-tight"
-        >
+        {eyebrow ? <p className="ns-eyebrow">{eyebrow}</p> : null}
+        <h2 id={id} className="ns-section-title">
           {title}
         </h2>
         {description ? (
-          <p className="text-muted-foreground max-w-2xl text-sm leading-snug">
-            {description}
-          </p>
+          <div className="ns-muted max-w-2xl">{description}</div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-1">
           {actions}
         </div>
       ) : null}

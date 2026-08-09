@@ -1,6 +1,11 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Role } from "@/config/roles";
 
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
+import { loadCurrentSchoolYearLabel } from "@/lib/school-years/current-school-year";
 import { ReportCardRegistryFilters } from "@/features/report-cards/report-card-registry-filters";
 import { ReportCardRegistryTable } from "@/features/report-cards/report-card-registry-table";
 import {
@@ -32,8 +37,18 @@ export async function ReportCardRegistrySection({
     );
   }
 
+  const currentYearRes = await loadCurrentSchoolYearLabel(supabase);
+  if (!currentYearRes.ok) {
+    return (
+      <p className="text-destructive text-sm" role="alert">
+        {currentYearRes.error}
+      </p>
+    );
+  }
+
+  const yearFromQuery = spGet(searchParams, "year");
   const defaults = {
-    year: spGet(searchParams, "year"),
+    year: yearFromQuery || currentYearRes.label || "",
     term: spGet(searchParams, "term"),
     status: spGet(searchParams, "status"),
     classId: spGet(searchParams, "class"),
@@ -52,8 +67,17 @@ export async function ReportCardRegistrySection({
     supabase.from("school_years").select("label").order("starts_on", { ascending: false }),
   ]);
 
-  const yearOptions = yearsRes.data?.map((y) => y.label) ?? [];
-  const listErr = registry.error ?? classes.error;
+  if (yearsRes.error) {
+    logServerError("report-cards.registry.schoolYears", yearsRes.error.message);
+  }
+
+  const yearOptions = yearsRes.error
+    ? []
+    : (yearsRes.data?.map((y) => y.label) ?? []);
+  const listErr =
+    registry.error ??
+    classes.error ??
+    (yearsRes.error ? GENERIC_INFORMATION_LOAD_ERROR : null);
 
   return (
     <section className="space-y-4">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
+import { Settings } from "lucide-react";
 
 import { canManageSchoolStructure, isRole, type Role } from "@/config/roles";
 import { siteConfig } from "@/config/site";
@@ -14,7 +15,6 @@ import { loadSchoolSettings } from "@/features/school-settings/load-school-setti
 import { AcademicStructureForms } from "@/features/school-settings/academic-structure-forms";
 import { loadAcademicStructurePageData } from "@/features/school-settings/load-academic-structure-data";
 import { SchoolSettingsForm } from "@/features/school-settings/school-settings-form";
-import { Settings } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "School settings",
@@ -37,11 +37,11 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
 
   if (!loaded.ok) {
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
+      <div className="ns-page-shell space-y-8 sm:space-y-10">
         <WorkspacePageHeader
           eyebrow={siteConfig.shortName}
           title="School settings"
-          description="Configure your school's name, logo, and report card branding."
+          description="Configure your school's identity for report cards and official records."
         />
         <div
           className="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
@@ -59,12 +59,24 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
   if (canManageSchoolStructure(role)) {
     const ac = await loadAcademicStructurePageData();
     academicStructureBlock = !ac.ok ? (
-      <div
-        className="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
-        role="alert"
+      <section
+        id="academic-structure"
+        className="scroll-mt-24 space-y-3"
+        aria-labelledby="academic-structure-heading"
       >
-        <span className="font-medium">Could not load academic structure.</span> {ac.message}
-      </div>
+        <div className="space-y-1">
+          <p className="ns-eyebrow">Configuration</p>
+          <h2 id="academic-structure-heading" className="ns-section-title">
+            Academic structure
+          </h2>
+        </div>
+        <div
+          className="border-destructive/40 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
+          role="alert"
+        >
+          {ac.message}
+        </div>
+      </section>
     ) : (
       <AcademicStructureForms
         dashboardRole={role}
@@ -75,19 +87,19 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
+    <div className="ns-page-shell space-y-10 sm:space-y-12">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="School settings"
         description={
           readOnly
             ? "View institution details used on report cards and official records."
-            : "Set your school's identity for report cards and records. This is separate from the Northstar platform name shown in the app shell."
+            : "Configure academic structure, institution identity, branding, and official document text."
         }
         footer={
           <span className="inline-flex items-center gap-1.5">
             <Settings className="size-3.5 opacity-70" aria-hidden />
-            {readOnly ? "Read-only for your role" : "Changes apply to new report card previews"}
+            {readOnly ? "Read-only for your role" : "Updates apply to new report cards"}
           </span>
         }
       />

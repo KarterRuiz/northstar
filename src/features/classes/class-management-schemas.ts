@@ -46,3 +46,14 @@ export const createClassWithTeachersBodySchema = z
   });
 
 export type CreateClassWithTeachersInput = z.infer<typeof createClassWithTeachersBodySchema>;
+
+/** Payload for `updateClassDetailsAction`. */
+export const updateClassDetailsBodySchema = z.object({
+  classId: z.string().uuid(),
+  schoolYearId: z.string().uuid(),
+  gradeLevelId: z.string().uuid(),
+  name: z.string().trim().min(1, "Class name is required.").max(200),
+  section: z.string().trim().min(1, "Section is required.").max(80),
+});
+
+export type UpdateClassDetailsInput = z.infer<typeof updateClassDetailsBodySchema>;

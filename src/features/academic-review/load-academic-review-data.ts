@@ -3,6 +3,11 @@ import "server-only";
 import { cache } from "react";
 
 import { REPORT_CARD_TERMS } from "@/lib/report-cards/constants";
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -196,25 +201,21 @@ export const loadAcademicReviewData = cache(
     search: AcademicReviewSearchParams,
   ): Promise<AcademicReviewResult> => {
     if (!isSupabaseConfigured()) {
-      return { ok: false, message: "Supabase is not configured." };
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const supabase = await createServerSupabaseClient();
 
-    const { data: schoolYear, error: yearError } = await supabase
-      .from("school_years")
-      .select("id, label")
-      .order("starts_on", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (yearError) {
-      return { ok: false, message: yearError.message };
+    const currentYearResult = await loadCurrentSchoolYear(supabase);
+    if (!currentYearResult.ok) {
+      return { ok: false, message: currentYearResult.error };
     }
+
+    const schoolYear = currentYearResult.year;
     if (!schoolYear?.id || !schoolYear.label?.trim()) {
       return {
         ok: true,
-        dbError: "No school year is configured yet.",
+        dbError: "No Current school year is set. Set one in School Settings.",
         summary: {
           schoolYearLabel: "—",
           schoolYearId: "",
@@ -272,7 +273,8 @@ export const loadAcademicReviewData = cache(
       .limit(2500);
 
     if (enrError) {
-      return { ok: false, message: enrError.message };
+      logServerError("academic-review.loadEnrollments", enrError.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const normalized = (enrollmentRows ?? [])
@@ -291,7 +293,8 @@ export const loadAcademicReviewData = cache(
         .in("student_id", studentIds);
 
       if (tnError) {
-        return { ok: false, message: tnError.message };
+        logServerError("academic-review.loadTransitionNotes", tnError.message);
+        return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
       }
       transitionRows = (tnData ?? []) as { student_id: string; status: string }[];
     }
@@ -305,7 +308,8 @@ export const loadAcademicReviewData = cache(
         .in("student_id", studentIds);
 
       if (filesError) {
-        return { ok: false, message: filesError.message };
+        logServerError("academic-review.loadReportCards", filesError.message);
+        return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
       }
       for (const row of files ?? []) {
         const sid = row.student_id as string;
@@ -448,7 +452,10 @@ export const loadAcademicReviewData = cache(
       academicRecordArchivedCount;
 
     const filterOptions: AcademicReviewFilterOptions = {
-      grades: [...gradeMap.values()].sort((a, b) => a.sortOrder - b.sortOrder),
+      grades: [...gradeMap.values()].sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }),
       classes: [...classMap.entries()]
         .map(([id, label]) => ({ id, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),

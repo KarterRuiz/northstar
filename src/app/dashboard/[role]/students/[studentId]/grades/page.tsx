@@ -1,17 +1,17 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { isRole } from "@/config/roles";
-import { GradesTab } from "@/features/students/profile/tabs/grades-tab";
 import { isStudentId } from "@/lib/students/uuid";
 
 type PageProps = {
   params: Promise<{ role: string; studentId: string }>;
 };
 
-export default async function StudentGradesPage({ params }: PageProps) {
-  const { role: roleParam, studentId } = await params;
-  if (!isRole(roleParam)) notFound();
+/** Preserves bookmarks: grades moved under the Academics tab. */
+export default async function StudentGradesRedirectPage({ params }: PageProps) {
+  const { role, studentId } = await params;
+  if (!isRole(role)) notFound();
   if (!isStudentId(studentId)) notFound();
 
-  return <GradesTab studentId={studentId} role={roleParam} />;
+  redirect(`/dashboard/${role}/students/${studentId}/academics`);
 }

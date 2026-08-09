@@ -5,15 +5,21 @@ import { revalidatePath } from "next/cache";
 import { canEditSchoolSettings, isRole, type Role } from "@/config/roles";
 import { getProfileRole, getUser } from "@/lib/auth/session";
 import {
+  MAX_SCHOOL_LOGO_BYTES,
   SCHOOL_LOGOS_BUCKET,
   SCHOOL_SETTINGS_ID,
 } from "@/lib/school-settings/constants";
 import {
-  extensionForLogoMime,
   isValidHexColor,
   normalizeOptionalHexColor,
+  resolveLogoExtension,
 } from "@/lib/school-settings/validation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+import {
+  logSchoolSettingsError,
+  schoolSettingsDbErrorMessage,
+} from "./safe-admin-error";
 
 export type SchoolSettingsMutationState =
   | { ok: true; message?: string }
@@ -39,19 +45,59 @@ async function assertCanEditSchoolSettings(
   return { ok: true, userId: user.id };
 }
 
-function pickText(formData: FormData, key: string, maxLen: number): string {
-  return String(formData.get(key) ?? "").trim().slice(0, maxLen);
-}
-
-export async function updateSchoolSettingsAction(
-  _prev: SchoolSettingsMutationState | undefined,
+function parseDashboardRole(
   formData: FormData,
-): Promise<SchoolSettingsMutationState> {
+): { ok: true; dashboardRole: Role } | { ok: false; message: string } {
   const roleRaw = String(formData.get("dashboardRole") ?? "");
   if (!isRole(roleRaw)) {
     return { ok: false, message: "Invalid workspace." };
   }
-  const dashboardRole = roleRaw as Role;
+  return { ok: true, dashboardRole: roleRaw as Role };
+}
+
+function pickText(formData: FormData, key: string, maxLen: number): string {
+  return String(formData.get(key) ?? "").trim().slice(0, maxLen);
+}
+
+function revalidateSchoolSettingsPaths(dashboardRole: Role) {
+  revalidatePath(`/dashboard/${dashboardRole}/school-settings`, "page");
+  revalidatePath("/dashboard/teacher/report-cards/preview", "layout");
+}
+
+function parseHexColorField(
+  formData: FormData,
+  key: string,
+  fallback: string,
+): { ok: true; value: string } | { ok: false; message: string } {
+  const raw = pickText(formData, key, 7);
+  if (!isValidHexColor(raw)) {
+    return {
+      ok: false,
+      message: "Colors must be a 6-digit hex value (#RRGGBB).",
+    };
+  }
+  return { ok: true, value: normalizeOptionalHexColor(raw) || fallback };
+}
+
+function failSettings(
+  scope: string,
+  detail: string,
+  fallback: string,
+): { ok: false; message: string } {
+  logSchoolSettingsError(scope, detail);
+  return {
+    ok: false,
+    message: schoolSettingsDbErrorMessage(detail, fallback),
+  };
+}
+
+export async function updateSchoolInstitutionDetailsAction(
+  _prev: SchoolSettingsMutationState | undefined,
+  formData: FormData,
+): Promise<SchoolSettingsMutationState> {
+  const parsedRole = parseDashboardRole(formData);
+  if (!parsedRole.ok) return parsedRole;
+  const { dashboardRole } = parsedRole;
 
   const gate = await assertCanEditSchoolSettings(dashboardRole);
   if (!gate.ok) return gate;
@@ -61,20 +107,15 @@ export async function updateSchoolSettingsAction(
   const schoolPhone = pickText(formData, "schoolPhone", 40);
   const schoolEmail = pickText(formData, "schoolEmail", 200);
   const website = pickText(formData, "website", 300);
-  const reportCardFooter = pickText(formData, "reportCardFooter", 2000);
   const principalName = pickText(formData, "principalName", 200);
-
-  const primaryColorRaw = pickText(formData, "primaryColor", 7);
-  const secondaryColorRaw = pickText(formData, "secondaryColor", 7);
-  if (!isValidHexColor(primaryColorRaw) || !isValidHexColor(secondaryColorRaw)) {
-    return { ok: false, message: "Colors must be empty or a 6-digit hex value (#RRGGBB)." };
-  }
-  const primaryColor = normalizeOptionalHexColor(primaryColorRaw) || "#1e3a5f";
-  const secondaryColor = normalizeOptionalHexColor(secondaryColorRaw) || "#4a6fa5";
 
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    return { ok: false, message: "Supabase is not configured." };
+    return failSettings(
+      "updateInstitution",
+      "Supabase is not configured",
+      "Institution details could not be saved. Try again.",
+    );
   }
 
   const { error } = await supabase
@@ -85,32 +126,117 @@ export async function updateSchoolSettingsAction(
       school_phone: schoolPhone,
       school_email: schoolEmail,
       website,
-      primary_color: primaryColor,
-      secondary_color: secondaryColor,
-      report_card_footer: reportCardFooter,
       principal_name: principalName,
     })
     .eq("id", SCHOOL_SETTINGS_ID);
 
   if (error) {
-    return { ok: false, message: error.message || "Could not save settings." };
+    return failSettings(
+      "updateInstitution",
+      error.message,
+      "Institution details could not be saved. Try again.",
+    );
   }
 
-  revalidatePath(`/dashboard/${dashboardRole}/school-settings`, "page");
-  revalidatePath("/dashboard/teacher/report-cards/preview", "layout");
+  revalidateSchoolSettingsPaths(dashboardRole);
+  return { ok: true, message: "Institution details saved." };
+}
 
-  return { ok: true, message: "School settings saved." };
+/** Branding colors only — logo and footer save via their own actions. */
+export async function updateSchoolBrandingSettingsAction(
+  _prev: SchoolSettingsMutationState | undefined,
+  formData: FormData,
+): Promise<SchoolSettingsMutationState> {
+  const parsedRole = parseDashboardRole(formData);
+  if (!parsedRole.ok) return parsedRole;
+  const { dashboardRole } = parsedRole;
+
+  const gate = await assertCanEditSchoolSettings(dashboardRole);
+  if (!gate.ok) return gate;
+
+  const primaryParsed = parseHexColorField(formData, "primaryColor", "#1e3a5f");
+  if (!primaryParsed.ok) return primaryParsed;
+  const secondaryParsed = parseHexColorField(formData, "secondaryColor", "#4a6fa5");
+  if (!secondaryParsed.ok) return secondaryParsed;
+
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) {
+    return failSettings(
+      "updateBranding",
+      "Supabase is not configured",
+      "Branding could not be saved. Try again.",
+    );
+  }
+
+  const { error } = await supabase
+    .from("school_settings")
+    .update({
+      primary_color: primaryParsed.value,
+      secondary_color: secondaryParsed.value,
+    })
+    .eq("id", SCHOOL_SETTINGS_ID);
+
+  if (error) {
+    return failSettings(
+      "updateBranding",
+      error.message,
+      "Branding could not be saved. Try again.",
+    );
+  }
+
+  revalidateSchoolSettingsPaths(dashboardRole);
+  return { ok: true, message: "Branding colors saved." };
+}
+
+/** Report-card footer only — keeps document save independent of colors/logo. */
+export async function updateSchoolOfficialDocumentsAction(
+  _prev: SchoolSettingsMutationState | undefined,
+  formData: FormData,
+): Promise<SchoolSettingsMutationState> {
+  const parsedRole = parseDashboardRole(formData);
+  if (!parsedRole.ok) return parsedRole;
+  const { dashboardRole } = parsedRole;
+
+  const gate = await assertCanEditSchoolSettings(dashboardRole);
+  if (!gate.ok) return gate;
+
+  const reportCardFooter = pickText(formData, "reportCardFooter", 2000);
+
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) {
+    return failSettings(
+      "updateOfficialDocuments",
+      "Supabase is not configured",
+      "Official documents could not be saved. Try again.",
+    );
+  }
+
+  const { error } = await supabase
+    .from("school_settings")
+    .update({
+      report_card_footer: reportCardFooter,
+    })
+    .eq("id", SCHOOL_SETTINGS_ID);
+
+  if (error) {
+    return failSettings(
+      "updateOfficialDocuments",
+      error.message,
+      "Official documents could not be saved. Try again.",
+    );
+  }
+
+  revalidateSchoolSettingsPaths(dashboardRole);
+  return { ok: true, message: "Official documents saved." };
 }
 
 export async function uploadSchoolLogoAction(
   _prev: SchoolSettingsMutationState | undefined,
   formData: FormData,
 ): Promise<SchoolSettingsMutationState> {
-  const roleRaw = String(formData.get("dashboardRole") ?? "");
-  if (!isRole(roleRaw)) {
-    return { ok: false, message: "Invalid workspace." };
-  }
-  const dashboardRole = roleRaw as Role;
+  const parsedRole = parseDashboardRole(formData);
+  if (!parsedRole.ok) return parsedRole;
+  const { dashboardRole } = parsedRole;
 
   const gate = await assertCanEditSchoolSettings(dashboardRole);
   if (!gate.ok) return gate;
@@ -120,11 +246,11 @@ export async function uploadSchoolLogoAction(
     return { ok: false, message: "Choose an image file to upload." };
   }
 
-  if (file.size > 2 * 1024 * 1024) {
+  if (file.size > MAX_SCHOOL_LOGO_BYTES) {
     return { ok: false, message: "Logo must be 2 MB or smaller." };
   }
 
-  const ext = extensionForLogoMime(file.type);
+  const ext = resolveLogoExtension(file);
   if (!ext) {
     return {
       ok: false,
@@ -132,12 +258,25 @@ export async function uploadSchoolLogoAction(
     };
   }
 
+  const contentType =
+    file.type ||
+    ({
+      png: "image/png",
+      jpg: "image/jpeg",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+    }[ext] as string);
+
   const storagePath = `logo.${ext}`;
   const buffer = await file.arrayBuffer();
 
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    return { ok: false, message: "Supabase is not configured." };
+    return failSettings(
+      "uploadLogo",
+      "Supabase is not configured",
+      "Logo could not be uploaded. Try again.",
+    );
   }
 
   const { data: existing } = await supabase
@@ -152,12 +291,16 @@ export async function uploadSchoolLogoAction(
   const { error: uploadError } = await supabase.storage
     .from(SCHOOL_LOGOS_BUCKET)
     .upload(storagePath, buffer, {
-      contentType: file.type,
+      contentType,
       upsert: true,
     });
 
   if (uploadError) {
-    return { ok: false, message: uploadError.message || "Logo upload failed." };
+    return failSettings(
+      "uploadLogo.storage",
+      uploadError.message,
+      "Logo could not be uploaded. Try again.",
+    );
   }
 
   const { error: updateError } = await supabase
@@ -167,16 +310,18 @@ export async function uploadSchoolLogoAction(
 
   if (updateError) {
     await supabase.storage.from(SCHOOL_LOGOS_BUCKET).remove([storagePath]);
-    return { ok: false, message: updateError.message || "Could not save logo path." };
+    return failSettings(
+      "uploadLogo.update",
+      updateError.message,
+      "Logo could not be saved. Try again.",
+    );
   }
 
   if (previousPath && previousPath !== storagePath) {
     await supabase.storage.from(SCHOOL_LOGOS_BUCKET).remove([previousPath]);
   }
 
-  revalidatePath(`/dashboard/${dashboardRole}/school-settings`, "page");
-  revalidatePath("/dashboard/teacher/report-cards/preview", "layout");
-
+  revalidateSchoolSettingsPaths(dashboardRole);
   return { ok: true, message: "School logo updated." };
 }
 
@@ -184,18 +329,20 @@ export async function removeSchoolLogoAction(
   _prev: SchoolSettingsMutationState | undefined,
   formData: FormData,
 ): Promise<SchoolSettingsMutationState> {
-  const roleRaw = String(formData.get("dashboardRole") ?? "");
-  if (!isRole(roleRaw)) {
-    return { ok: false, message: "Invalid workspace." };
-  }
-  const dashboardRole = roleRaw as Role;
+  const parsedRole = parseDashboardRole(formData);
+  if (!parsedRole.ok) return parsedRole;
+  const { dashboardRole } = parsedRole;
 
   const gate = await assertCanEditSchoolSettings(dashboardRole);
   if (!gate.ok) return gate;
 
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    return { ok: false, message: "Supabase is not configured." };
+    return failSettings(
+      "removeLogo",
+      "Supabase is not configured",
+      "Logo could not be removed. Try again.",
+    );
   }
 
   const { data: existing } = await supabase
@@ -213,15 +360,17 @@ export async function removeSchoolLogoAction(
     .eq("id", SCHOOL_SETTINGS_ID);
 
   if (updateError) {
-    return { ok: false, message: updateError.message || "Could not remove logo." };
+    return failSettings(
+      "removeLogo",
+      updateError.message,
+      "Logo could not be removed. Try again.",
+    );
   }
 
   if (previousPath) {
     await supabase.storage.from(SCHOOL_LOGOS_BUCKET).remove([previousPath]);
   }
 
-  revalidatePath(`/dashboard/${dashboardRole}/school-settings`, "page");
-  revalidatePath("/dashboard/teacher/report-cards/preview", "layout");
-
+  revalidateSchoolSettingsPaths(dashboardRole);
   return { ok: true, message: "School logo removed." };
 }

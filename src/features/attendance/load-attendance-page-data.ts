@@ -5,6 +5,10 @@ import { cache } from "react";
 import { loadSchoolYearTermContext } from "@/features/attendance-behavior/load-support-flag-data";
 import { ATTENDANCE_ABSENCE_THRESHOLD } from "@/features/interventions/support-flags";
 import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
+import {
   hasAttendanceConcernMetrics,
   tallyAttendanceConcernMetrics,
 } from "./attendance-concerns";
@@ -117,7 +121,8 @@ export const loadAttendancePageData = cache(async function loadAttendancePageDat
   ]);
 
   if (existingResult.error) {
-    return { ok: false, message: existingResult.error.message };
+    logServerError("attendance.loadPage.records", existingResult.error.message);
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
   }
   existing = (existingResult.data ?? []) as typeof existing;
 

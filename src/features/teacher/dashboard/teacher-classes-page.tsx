@@ -57,7 +57,7 @@ async function TeacherClassesBody() {
       {classes.length === 0 ? (
         <ListEmptyState
           title="No assigned classes"
-          description="Your account is not linked in class_teachers yet. Ask leadership to assign you under Classes."
+          description="Ask leadership to assign your grade levels or classes under Teachers & staff."
         />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
@@ -107,7 +107,7 @@ export function TeacherClassesPageContent() {
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="My classes"
-        description="Only classes where you appear in class_teachers. Open a class to work the roster and completion checks."
+        description="Only classes you can access. Open a class to work the roster and completion checks."
       />
 
       <Suspense fallback={<TeacherClassesSkeleton />}>

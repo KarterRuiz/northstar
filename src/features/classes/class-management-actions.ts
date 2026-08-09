@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { canManageSchoolStructure, type Role } from "@/config/roles";
 import { getProfileRole } from "@/lib/auth/session";
 import { recordAuditEvent } from "@/lib/audit/logger";
+import {
+  logServerError,
+  safeUserFacingMessage,
+} from "@/lib/errors/safe-user-message";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -18,11 +22,16 @@ import {
 } from "./constants";
 import { CLASS_HAS_RECORDS_MESSAGE } from "./constants";
 import { checkClassDeletable } from "./class-lifecycle";
-import { createClassWithTeachersBodySchema } from "./class-management-schemas";
+import { createClassWithTeachersBodySchema, updateClassDetailsBodySchema } from "./class-management-schemas";
 
 export type ClassManagementMutationState =
   | { ok: true; message?: string }
   | { ok: false; error: string };
+
+function failDb(scope: string, raw: string, fallback: string): { ok: false; error: string } {
+  logServerError(`class-management.${scope}`, raw);
+  return { ok: false, error: safeUserFacingMessage(raw, fallback) };
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,10 +70,6 @@ async function requireStructureManager(): Promise<
 
 function revalidateClasses(role: Role) {
   revalidatePath(`/dashboard/${role}/classes`);
-}
-
-function revalidateSchoolSettings(role: Role) {
-  revalidatePath(`/dashboard/${role}/school-settings`);
 }
 
 type HomeroomResult = { ok: true } | { ok: false; error: string };
@@ -134,6 +139,25 @@ async function insertClassRecord(
     section: string | null;
   },
 ): Promise<InsertClassOk | InsertClassErr> {
+  const { data: grade, error: gradeErr } = await ctx.supabase
+    .from("grade_levels")
+    .select("id, is_archived")
+    .eq("id", params.gradeLevelId)
+    .maybeSingle();
+
+  if (gradeErr) {
+    return { ok: false, error: gradeErr.message };
+  }
+  if (!grade) {
+    return { ok: false, error: "Choose a valid grade level." };
+  }
+  if (grade.is_archived) {
+    return {
+      ok: false,
+      error: "That grade level is archived. Restore it in School settings before creating a class.",
+    };
+  }
+
   const { data: created, error } = await ctx.supabase
     .from("classes")
     .insert({
@@ -147,7 +171,7 @@ async function insertClassRecord(
     .maybeSingle();
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("createClass", error.message, "Could not create the class. Try again.");
   }
   if (!created?.id) {
     return { ok: false, error: "Class was not created (no id returned)." };
@@ -185,85 +209,12 @@ async function assertTeacherProfile(
     .maybeSingle();
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("assertTeacherProfile", error.message, "Could not verify the teacher. Try again.");
   }
   if (!data || data.role !== "teacher") {
     return { ok: false, error: "Homeroom and class teachers must be users with the teacher role." };
   }
   return null;
-}
-
-export async function createSchoolYearAction(
-  _prev: ClassManagementMutationState | undefined,
-  formData: FormData,
-): Promise<ClassManagementMutationState> {
-  const ctx = await requireStructureManager();
-  if (!ctx.ok) return ctx;
-
-  const label = trimStr(formData.get("label"), 200);
-  const startsOn = trimStr(formData.get("startsOn"), 32);
-  const endsOn = trimStr(formData.get("endsOn"), 32);
-
-  if (!label) {
-    return { ok: false, error: "School year label is required." };
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || !/^\d{4}-\d{2}-\d{2}$/.test(endsOn)) {
-    return { ok: false, error: "Start and end dates must use YYYY-MM-DD format." };
-  }
-  if (startsOn > endsOn) {
-    return { ok: false, error: "Start date must be on or before end date." };
-  }
-
-  const { error } = await ctx.supabase.from("school_years").insert({
-    label,
-    starts_on: startsOn,
-    ends_on: endsOn,
-  });
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  revalidateClasses(ctx.role);
-  revalidateSchoolSettings(ctx.role);
-  return { ok: true, message: `School year “${label}” was created.` };
-}
-
-export async function createGradeLevelAction(
-  _prev: ClassManagementMutationState | undefined,
-  formData: FormData,
-): Promise<ClassManagementMutationState> {
-  const ctx = await requireStructureManager();
-  if (!ctx.ok) return ctx;
-
-  const name = trimStr(formData.get("name"), 200);
-  const sortRaw = String(formData.get("sortOrder") ?? "").trim();
-  const codeRaw = trimStr(formData.get("code"), 40);
-
-  if (!name) {
-    return { ok: false, error: "Grade level name is required." };
-  }
-
-  const sortOrder = Number.parseInt(sortRaw, 10);
-  if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 999) {
-    return { ok: false, error: "Sort order must be an integer from 0 to 999." };
-  }
-
-  const code = codeRaw.length > 0 ? codeRaw : null;
-
-  const { error } = await ctx.supabase.from("grade_levels").insert({
-    name,
-    sort_order: sortOrder,
-    code,
-  });
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  revalidateClasses(ctx.role);
-  revalidateSchoolSettings(ctx.role);
-  return { ok: true, message: `Grade level “${name}” was created.` };
 }
 
 export async function createClassAction(
@@ -375,6 +326,96 @@ export async function createClassWithTeachersAction(
 
   revalidateClasses(ctx.role);
   return { ok: true, message: "Class was created with teachers assigned." };
+}
+
+export async function updateClassDetailsAction(
+  input: unknown,
+): Promise<ClassManagementMutationState> {
+  const parsed = updateClassDetailsBodySchema.safeParse(input);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { ok: false, error: first?.message ?? "Invalid request." };
+  }
+
+  const { classId, schoolYearId, gradeLevelId, name, section } = parsed.data;
+
+  const ctx = await requireStructureManager();
+  if (!ctx.ok) return ctx;
+
+  const klass = await loadClassForLifecycle(ctx.supabase, classId);
+  if (!klass.ok) return klass;
+
+  const { data: year, error: yearErr } = await ctx.supabase
+    .from("school_years")
+    .select("id")
+    .eq("id", schoolYearId)
+    .is("archived_at", null)
+    .maybeSingle();
+
+  if (yearErr) {
+    logServerError("class-management.updateDetails.year", yearErr.message);
+    return {
+      ok: false,
+      error: safeUserFacingMessage(yearErr.message, "Could not validate school year. Try again."),
+    };
+  }
+  if (!year) {
+    return { ok: false, error: "Choose a valid school year." };
+  }
+
+  const { data: grade, error: gradeErr } = await ctx.supabase
+    .from("grade_levels")
+    .select("id, is_archived")
+    .eq("id", gradeLevelId)
+    .maybeSingle();
+
+  if (gradeErr) {
+    return { ok: false, error: gradeErr.message };
+  }
+  if (!grade) {
+    return { ok: false, error: "Choose a valid grade level." };
+  }
+  if (grade.is_archived) {
+    const { data: current } = await ctx.supabase
+      .from("classes")
+      .select("grade_level_id")
+      .eq("id", classId)
+      .maybeSingle();
+    if (current?.grade_level_id !== gradeLevelId) {
+      return {
+        ok: false,
+        error: "That grade level is archived. Restore it in School settings before assigning it.",
+      };
+    }
+  }
+
+  const { error } = await ctx.supabase
+    .from("classes")
+    .update({
+      school_year_id: schoolYearId,
+      grade_level_id: gradeLevelId,
+      name,
+      section,
+    })
+    .eq("id", classId);
+
+  if (error) {
+    return failDb("createClassTeachers", error.message, "Could not assign teachers. Try again.");
+  }
+
+  await recordAuditEvent({
+    action: "class_updated",
+    actorUserId: ctx.userId,
+    metadata: {
+      classId,
+      schoolYearId,
+      gradeLevelId,
+      className: name,
+    },
+  });
+
+  revalidateClasses(ctx.role);
+  return { ok: true, message: "Class details were saved." };
 }
 
 export async function assignHomeroomTeacherAction(
@@ -569,7 +610,7 @@ export async function assignAdditionalTeacherAction(
   });
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("updateDetails", error.message, "Could not update class details. Try again.");
   }
 
   await recordAuditEvent({
@@ -600,7 +641,7 @@ async function loadClassForLifecycle(
     .maybeSingle();
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("updateTeachers", error.message, "Could not update class teachers. Try again.");
   }
   if (!data?.id) {
     return { ok: false, error: "Class was not found." };
@@ -633,7 +674,7 @@ export async function archiveClassAction(
     .eq("id", classId);
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("archive", error.message, "Could not archive the class. Try again.");
   }
 
   await recordAuditEvent({
@@ -675,7 +716,7 @@ export async function restoreClassAction(
     .eq("id", classId);
 
   if (error) {
-    return { ok: false, error: error.message };
+    return failDb("restore", error.message, "Could not restore the class. Try again.");
   }
 
   await recordAuditEvent({
@@ -721,7 +762,7 @@ export async function deleteClassAction(
     if (error.message.includes("CLASS_HAS_ACADEMIC_RECORDS")) {
       return { ok: false, error: CLASS_HAS_RECORDS_MESSAGE };
     }
-    return { ok: false, error: error.message };
+    return failDb("delete", error.message, "Could not delete the class. Try again.");
   }
 
   await recordAuditEvent({

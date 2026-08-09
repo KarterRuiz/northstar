@@ -1,33 +1,36 @@
 /**
- * Static labels for admin overview cards (values come from Supabase in
- * `load-admin-dashboard-stats.ts`).
+ * Static labels and destinations for admin operational signal cards.
+ * Values and status come from `load-admin-dashboard-stats.ts`.
  */
-export const ADMIN_SUMMARY_CARD_META = [
+export const ADMIN_SIGNAL_CARD_META = [
   {
-    id: "total-students",
-    title: "Total active students",
-    caption: "Distinct students with at least one active enrollment",
+    id: "student-enrollment",
+    title: "Student enrollment",
+    href: "/dashboard/admin/students",
+    cta: "View students",
   },
   {
     id: "active-classes",
     title: "Active classes",
-    caption: "Classes marked active for scheduling",
+    href: "/dashboard/admin/classes",
+    cta: "View classes",
   },
   {
-    id: "pending-transition-notes",
-    title: "Transition notes awaiting review",
-    caption: "Teacher submissions in submitted status (not draft or archived)",
+    id: "transition-notes",
+    title: "Transition notes",
+    href: "/dashboard/admin/academic-review?tn=submitted",
+    cta: "Review notes",
   },
   {
-    id: "missing-report-cards",
-    title: "Missing report cards",
-    caption:
-      "Active students without a report card PDF for the latest school year label",
+    id: "report-cards",
+    title: "Report cards",
+    href: "/dashboard/admin/report-cards",
+    cta: "Open report cards",
   },
   {
-    id: "recent-record-requests",
-    title: "Received parent requests (30d)",
-    caption:
-      "Requests still in received status from the last 30 days (awaiting fulfilment)",
+    id: "parent-requests",
+    title: "Parent requests",
+    href: "/dashboard/admin/parent-requests",
+    cta: "Open requests",
   },
 ] as const;

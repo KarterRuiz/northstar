@@ -194,6 +194,9 @@ type AdminTeacherInviteAssignedClassesProps = {
   disabled?: boolean;
   /** Defaults to `classIds` for `createStaffInvitationAction` / `parsePendingClassIds`. */
   fieldName?: string;
+  /** When set, only classes in these grade levels are listed (invite grade → class flow). */
+  allowedGradeLevelIds?: string[];
+  initialSelectedIds?: string[];
 };
 
 /**
@@ -204,22 +207,45 @@ export function AdminTeacherInviteAssignedClasses({
   options,
   disabled,
   fieldName = INVITE_FIELD_NAME,
+  allowedGradeLevelIds,
+  initialSelectedIds = [],
 }: AdminTeacherInviteAssignedClassesProps) {
   const searchFieldId = useId();
   const [search, setSearch] = useState("");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const optionById = useMemo(() => new Map(options.map((o) => [o.id, o])), [options]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
 
-  const submittedIds = useMemo(
-    () => selectedIds.filter((id) => optionById.has(id)),
-    [selectedIds, optionById],
+  const allowedSet = useMemo(() => {
+    if (allowedGradeLevelIds == null) return null;
+    return new Set(allowedGradeLevelIds);
+  }, [allowedGradeLevelIds]);
+
+  const scopedOptions = useMemo(() => {
+    if (!allowedSet) return options;
+    return options.filter((o) => allowedSet.has(o.gradeLevelId));
+  }, [options, allowedSet]);
+
+  const optionById = useMemo(
+    () => new Map(scopedOptions.map((o) => [o.id, o])),
+    [scopedOptions],
   );
+
+  const optionByIdAll = useMemo(() => new Map(options.map((o) => [o.id, o])), [options]);
+
+  // Keep selections in state; only submit those still in the grade filter.
+  // Parked (out-of-filter) selections are called out so they are not silently lost.
+  const submittedIds = useMemo(() => {
+    return selectedIds.filter((id) => optionById.has(id));
+  }, [selectedIds, optionById]);
+
+  const parkedIds = useMemo(() => {
+    return selectedIds.filter((id) => optionByIdAll.has(id) && !optionById.has(id));
+  }, [selectedIds, optionById, optionByIdAll]);
 
   const selectedSet = useMemo(() => new Set(submittedIds), [submittedIds]);
 
   const filtered = useMemo(
-    () => options.filter((o) => optionMatchesQuery(o, search)),
-    [options, search],
+    () => scopedOptions.filter((o) => optionMatchesQuery(o, search)),
+    [scopedOptions, search],
   );
 
   const groupedFiltered = useMemo(() => buildGroupedRows(filtered), [filtered]);
@@ -228,6 +254,8 @@ export function AdminTeacherInviteAssignedClasses({
     () => filtered.filter((o) => !selectedSet.has(o.id)).length,
     [filtered, selectedSet],
   );
+
+  const gradesNeedSelection = allowedSet != null && allowedSet.size === 0;
 
   const toggle = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -241,6 +269,18 @@ export function AdminTeacherInviteAssignedClasses({
     });
   };
 
+  const selectAllInGrade = (gradeName: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const o of filtered) {
+        if (o.gradeName === gradeName) next.add(o.id);
+      }
+      return [...next];
+    });
+  };
+
+  const clearAll = () => setSelectedIds([]);
+
   return (
     <div className="space-y-3">
       {submittedIds.map((id) => (
@@ -251,11 +291,28 @@ export function AdminTeacherInviteAssignedClasses({
           Classes this staff member can access
         </Label>
         <p className="text-muted-foreground text-xs leading-relaxed">
-          Choose the classes this staff member should see after signing in.
+          Exact classes they teach or can open after signing in. Filtered by the grade levels above.
         </p>
       </div>
-      {options.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No active classes are available yet.</p>
+      {parkedIds.length > 0 ? (
+        <p className="text-amber-900 dark:text-amber-100 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed">
+          {parkedIds.length} previously selected class
+          {parkedIds.length === 1 ? "" : "es"}{" "}
+          {parkedIds.length === 1 ? "is" : "are"} hidden because{" "}
+          {parkedIds.length === 1 ? "its" : "their"} grade level
+          {parkedIds.length === 1 ? " is" : "s are"} no longer selected. Re-select those grades to
+          keep {parkedIds.length === 1 ? "it" : "them"}, or save to drop{" "}
+          {parkedIds.length === 1 ? "it" : "them"} from this staff member.
+        </p>
+      ) : null}
+      {gradesNeedSelection ? (
+        <p className="text-muted-foreground text-sm">
+          Select one or more grade levels first to choose classes.
+        </p>
+      ) : scopedOptions.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          No active classes match the selected grade levels.
+        </p>
       ) : (
         <>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -268,18 +325,30 @@ export function AdminTeacherInviteAssignedClasses({
               disabled={disabled}
               className="h-9 sm:flex-1"
             />
-            {filtered.length > 1 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                disabled={disabled || visibleNotSelectedCount === 0}
-                onClick={selectAllVisible}
-              >
-                Select all visible
-              </Button>
-            ) : null}
+            <div className="flex shrink-0 gap-2">
+              {filtered.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled || visibleNotSelectedCount === 0}
+                  onClick={selectAllVisible}
+                >
+                  Select all visible
+                </Button>
+              ) : null}
+              {submittedIds.length > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={clearAll}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
           </div>
           <ScrollArea className="h-[min(20rem,45vh)] rounded-lg border">
             <div className="p-1" role="group" aria-label="Classes this staff member can access">
@@ -293,9 +362,19 @@ export function AdminTeacherInviteAssignedClasses({
                     return (
                       <div
                         key={row.key}
-                        className="bg-background text-muted-foreground sticky top-0 z-[1] border-b px-3 py-2 text-xs font-semibold tracking-wide"
+                        className="bg-background text-muted-foreground sticky top-0 z-[1] flex items-center justify-between gap-2 border-b px-3 py-2 text-xs font-semibold tracking-wide"
                       >
-                        {row.gradeName}
+                        <span>{row.gradeName}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground h-7 px-2 text-xs font-medium"
+                          disabled={disabled}
+                          onClick={() => selectAllInGrade(row.gradeName)}
+                        >
+                          Select all in grade
+                        </Button>
                       </div>
                     );
                   }
@@ -334,8 +413,8 @@ export function AdminTeacherInviteAssignedClasses({
             </div>
           </ScrollArea>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Saves with the invitation and applies when their teacher profile is created on first
-            sign-in. Teachers do not pick their own classes here.
+            Saved on the roster and applied when they activate. Teachers do not pick their own
+            classes here.
           </p>
         </>
       )}

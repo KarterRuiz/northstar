@@ -1,5 +1,6 @@
 "use client";
 
+import { MoreHorizontal } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -27,6 +35,7 @@ import {
   restoreClassAction,
   type ClassManagementMutationState,
 } from "./class-management-actions";
+import { ClassEditDetailsDialog } from "./class-edit-details-dialog";
 import { ClassTeachersEditDialog } from "./class-teachers-edit-dialog";
 import {
   CLASS_DELETE_CONFIRM_HINT,
@@ -34,7 +43,12 @@ import {
   CLASS_TEACHER_ROLE_HOMEROOM,
   formatClassTeacherRoleForDisplay,
 } from "./constants";
-import type { ClassManagementClassRow, TeacherOption } from "./load-class-management-data";
+import type {
+  ClassManagementClassRow,
+  GradeLevelRow,
+  SchoolYearRow,
+  TeacherOption,
+} from "./load-class-management-data";
 
 function MutationBanner({ state }: { state: ClassManagementMutationState | undefined }) {
   if (!state) return null;
@@ -68,13 +82,19 @@ type ConfirmKind = "archive" | "restore" | "delete" | null;
 function ClassRowActions({
   klass,
   teachers,
+  schoolYears,
+  gradeLevels,
   onMutation,
 }: {
   klass: ClassManagementClassRow;
   teachers: TeacherOption[];
+  schoolYears: SchoolYearRow[];
+  gradeLevels: GradeLevelRow[];
   onMutation: (state: ClassManagementMutationState) => void;
 }) {
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [editTeachersOpen, setEditTeachersOpen] = useState(false);
   const [archiveState, archiveAction, archivePending] = useActionState(
     archiveClassAction,
     undefined,
@@ -90,6 +110,7 @@ function ClassRowActions({
 
   const pending = archivePending || restorePending || deletePending;
   const lastState = deleteState ?? restoreState ?? archiveState;
+  const teachersUnavailable = teachers.length === 0;
 
   useEffect(() => {
     if (lastState) onMutation(lastState);
@@ -99,65 +120,81 @@ function ClassRowActions({
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {klass.is_active ? (
-          <ClassTeachersEditDialog
-            klass={klass}
-            teachers={teachers}
-            disabled={teachers.length === 0 || pending}
-            disabledReason={
-              teachers.length === 0
-                ? "Add at least one user with the teacher role before assigning class teachers."
-                : "Wait for the current action to finish."
-            }
-          />
-        ) : null}
-        {klass.is_active ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
             type="button"
             variant="outline"
             size="sm"
+            className="gap-1.5"
             disabled={pending}
-            onClick={() => setConfirm("archive")}
+            aria-label={`Actions for ${classRowLabel(klass)}`}
           >
-            Archive
+            Actions
+            <MoreHorizontal className="size-3.5 opacity-70" aria-hidden />
           </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
             disabled={pending}
-            onClick={() => setConfirm("restore")}
+            onSelect={() => setEditDetailsOpen(true)}
           >
-            Restore
-          </Button>
-        )}
-        {klass.deletable ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={pending}
-            onClick={() => setConfirm("delete")}
-            aria-label="Permanently delete this class"
-          >
-            Delete
-          </Button>
-        ) : (
-          <span className="inline-flex" title={CLASS_HAS_RECORDS_MESSAGE}>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              disabled
-              aria-label={`Delete unavailable. ${CLASS_HAS_RECORDS_MESSAGE}`}
+            Edit class details
+          </DropdownMenuItem>
+          {klass.is_active ? (
+            <DropdownMenuItem
+              disabled={pending || teachersUnavailable}
+              title={
+                teachersUnavailable
+                  ? "Add at least one teacher account before assigning class teachers."
+                  : undefined
+              }
+              onSelect={() => setEditTeachersOpen(true)}
             >
-              Delete
-            </Button>
-          </span>
-        )}
-      </div>
+              Edit teachers
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuSeparator />
+          {klass.is_active ? (
+            <DropdownMenuItem disabled={pending} onSelect={() => setConfirm("archive")}>
+              Archive class
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled={pending} onSelect={() => setConfirm("restore")}>
+              Restore class
+            </DropdownMenuItem>
+          )}
+          {klass.deletable ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={pending}
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setConfirm("delete")}
+              >
+                Delete class
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ClassEditDetailsDialog
+        klass={klass}
+        schoolYears={schoolYears}
+        gradeLevels={gradeLevels}
+        open={editDetailsOpen}
+        onOpenChange={setEditDetailsOpen}
+      />
+
+      {klass.is_active ? (
+        <ClassTeachersEditDialog
+          klass={klass}
+          teachers={teachers}
+          open={editTeachersOpen}
+          onOpenChange={setEditTeachersOpen}
+        />
+      ) : null}
 
       <Dialog open={confirm === "archive"} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent>
@@ -169,10 +206,7 @@ function ClassRowActions({
             </DialogDescription>
           </DialogHeader>
           <p className="text-muted-foreground text-sm">{classRowLabel(klass)}</p>
-          <form
-            action={archiveAction}
-            onSubmit={() => setConfirm(null)}
-          >
+          <form action={archiveAction} onSubmit={() => setConfirm(null)}>
             {hiddenClassId}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
@@ -245,9 +279,13 @@ function ClassRowActions({
 export function ClassesOverviewTable({
   classes,
   teachers,
+  schoolYears,
+  gradeLevels,
 }: {
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
+  schoolYears: SchoolYearRow[];
+  gradeLevels: GradeLevelRow[];
 }) {
   const [banner, setBanner] = useState<ClassManagementMutationState | undefined>();
 
@@ -265,7 +303,7 @@ export function ClassesOverviewTable({
               <TableHead className="min-w-[9rem]">Other teachers</TableHead>
               <TableHead className="text-right tabular-nums">Students</TableHead>
               <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="min-w-[10rem]">Actions</TableHead>
+              <TableHead className="min-w-[7rem]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -306,7 +344,13 @@ export function ClassesOverviewTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <ClassRowActions klass={c} teachers={teachers} onMutation={setBanner} />
+                    <ClassRowActions
+                      klass={c}
+                      teachers={teachers}
+                      schoolYears={schoolYears}
+                      gradeLevels={gradeLevels}
+                      onMutation={setBanner}
+                    />
                   </TableCell>
                 </TableRow>
               );

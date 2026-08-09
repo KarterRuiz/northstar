@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, LayoutDashboard, Shield, School } from "luci
 
 import { siteConfig } from "@/config/site";
 import { roleLabels, type Role } from "@/config/roles";
-import { navigationByRole } from "@/config/navigation";
+import { groupNavItems, navigationByRole } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,6 +35,29 @@ function brandInitial() {
   return trimmed ? trimmed.charAt(0).toUpperCase() : "N";
 }
 
+function isNavActive(
+  currentPath: string,
+  role: Role,
+  item: { href: string; activeWhen?: (currentPath: string, href: string) => boolean },
+): boolean {
+  if (item.activeWhen) return item.activeWhen(currentPath, item.href);
+  return (
+    currentPath === item.href ||
+    (item.href !== `/dashboard/${role}` &&
+      currentPath.startsWith(`${item.href}/`))
+  );
+}
+
+/** Active: deep navy + white. Hover: dark navy + white. 150ms ease-out. */
+const navItemBase =
+  "flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-[color,background-color,box-shadow] duration-150 ease-out";
+
+const navItemIdle =
+  "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-xs";
+
+const navItemActive =
+  "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-sm";
+
 export function SidebarNav({
   role,
   currentPath,
@@ -43,6 +66,7 @@ export function SidebarNav({
   onToggleCollapsed,
 }: SidebarNavProps) {
   const items = navigationByRole[role];
+  const sections = groupNavItems(items);
 
   const collapseToggleButton = onToggleCollapsed ? (
     <Button
@@ -50,7 +74,7 @@ export function SidebarNav({
       variant="outline"
       size="icon"
       className={cn(
-        "shrink-0 text-sidebar-foreground border-sidebar-border bg-sidebar/40 shadow-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "shrink-0 border-sidebar-border bg-card text-sidebar-foreground shadow-none transition-[color,background-color,border-color] duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:border-sidebar-accent",
         collapsed ? "size-7" : "size-8",
       )}
       aria-expanded={!collapsed}
@@ -70,10 +94,10 @@ export function SidebarNav({
   if (collapsed) {
     return (
       <div className="flex h-full flex-col">
-        <div className="border-sidebar-border flex shrink-0 items-center justify-between gap-0.5 border-b px-1 py-1.5">
+        <div className="border-sidebar-border flex shrink-0 items-center justify-between gap-0.5 border-b px-1.5 py-2">
           <Link
             href="/dashboard"
-            className="text-sidebar-foreground hover:bg-sidebar-accent/60 border-sidebar-border/60 flex size-7 items-center justify-center rounded-md border bg-sidebar/30 text-xs font-semibold tracking-tight transition-colors duration-150"
+            className="text-sidebar-primary-foreground bg-sidebar-primary hover:bg-primary-pressed flex size-7 items-center justify-center rounded-lg text-xs font-semibold tracking-tight transition-colors duration-150 ease-out"
             title={siteConfig.name}
           >
             <span aria-hidden>{brandInitial()}</span>
@@ -81,7 +105,7 @@ export function SidebarNav({
           </Link>
           {collapseToggleButton}
         </div>
-        <div className="flex flex-col items-center gap-1 py-2">
+        <div className="flex flex-col items-center gap-1 py-2.5">
           <span className="text-sidebar-foreground/55 sr-only">Role</span>
           {switcherRoles.map((r) => {
             const Icon = roleRailIcon(r);
@@ -92,13 +116,13 @@ export function SidebarNav({
                     href={`/dashboard/${r}`}
                     title={roleLabels[r]}
                     className={cn(
-                      "flex size-10 items-center justify-center rounded-md transition-colors duration-150",
+                      "flex size-9 items-center justify-center rounded-lg transition-[color,background-color,box-shadow] duration-150 ease-out",
                       r === role
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
-                        : "text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        ? navItemActive
+                        : navItemIdle,
                     )}
                   >
-                    <Icon className="size-4 shrink-0 opacity-90" aria-hidden />
+                    <Icon className="size-4 shrink-0" aria-hidden />
                     <span className="sr-only">{roleLabels[r]}</span>
                   </Link>
                 </TooltipTrigger>
@@ -110,14 +134,10 @@ export function SidebarNav({
           })}
         </div>
         <Separator className="bg-sidebar-border" />
-        <ScrollArea className="min-h-0 flex-1 py-2">
-          <nav className="flex flex-col items-center gap-0.5 px-1" aria-label="Section">
+        <ScrollArea className="min-h-0 flex-1 py-2.5">
+          <nav className="flex flex-col items-center gap-1 px-1.5" aria-label="Section">
             {items.map((item) => {
-              const active = item.activeWhen
-                ? item.activeWhen(currentPath, item.href)
-                : currentPath === item.href ||
-                  (item.href !== `/dashboard/${role}` &&
-                    currentPath.startsWith(`${item.href}/`));
+              const active = isNavActive(currentPath, role, item);
               return (
                 <Tooltip key={`${item.title}-${item.href}`}>
                   <TooltipTrigger asChild>
@@ -126,13 +146,11 @@ export function SidebarNav({
                       aria-current={active ? "page" : undefined}
                       title={item.title}
                       className={cn(
-                        "flex size-10 items-center justify-center rounded-md transition-colors duration-150",
-                        active
-                          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        "flex size-9 items-center justify-center rounded-lg transition-[color,background-color,box-shadow] duration-150 ease-out",
+                        active ? navItemActive : navItemIdle,
                       )}
                     >
-                      <item.icon className="size-4 shrink-0 opacity-90" aria-hidden />
+                      <item.icon className="size-4 shrink-0" aria-hidden />
                       <span className="sr-only">{item.title}</span>
                     </Link>
                   </TooltipTrigger>
@@ -153,32 +171,37 @@ export function SidebarNav({
       <div className="border-sidebar-border flex items-start gap-2 border-b px-3 py-4">
         <Link
           href="/dashboard"
-          className="hover:bg-sidebar-accent/50 flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-1 py-0.5 transition-colors duration-150"
+          className="hover:bg-surface-muted flex min-w-0 flex-1 items-start gap-2.5 rounded-lg px-1.5 py-1 transition-colors duration-150 ease-out"
         >
-          <span className="text-sidebar-foreground/80 text-[11px] font-semibold tracking-wider uppercase">
-            {siteConfig.name}
+          <span
+            className="bg-sidebar-primary text-sidebar-primary-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold"
+            aria-hidden
+          >
+            {brandInitial()}
           </span>
-          <span className="text-sidebar-foreground line-clamp-2 text-sm font-semibold">
-            {siteConfig.tagline}
+          <span className="min-w-0 flex flex-col gap-0.5">
+            <span className="text-heading text-sm font-semibold tracking-tight">
+              {siteConfig.name}
+            </span>
+            <span className="text-muted-foreground line-clamp-2 text-xs leading-snug">
+              {siteConfig.tagline}
+            </span>
           </span>
         </Link>
         {collapseToggleButton}
       </div>
       <div className="px-3 py-3">
-        <p className="text-sidebar-foreground/55 px-2 text-[11px] font-semibold tracking-wider uppercase">
+        <p className="text-meta-foreground px-2.5 text-[10px] font-semibold tracking-[0.08em] uppercase">
           Role
         </p>
-        <div className="mt-2 grid gap-0.5">
+        <div className="mt-1.5 grid gap-0.5">
           {switcherRoles.map((r) => (
             <Link
               key={r}
               href={`/dashboard/${r}`}
               className={cn(
-                "flex min-h-11 items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150",
-                "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                r === role
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-sm"
-                  : "text-sidebar-foreground/85",
+                navItemBase,
+                r === role ? navItemActive : navItemIdle,
               )}
             >
               {roleLabels[r]}
@@ -188,40 +211,35 @@ export function SidebarNav({
       </div>
       <Separator className="bg-sidebar-border" />
       <ScrollArea className="min-h-0 flex-1 px-3 py-3">
-        <p className="text-sidebar-foreground/55 px-2 text-[11px] font-semibold tracking-wider uppercase">
-          Navigation
-        </p>
-        <nav className="mt-2 grid gap-0.5" aria-label="Section">
-          {items.map((item) => {
-            const active = item.activeWhen
-              ? item.activeWhen(currentPath, item.href)
-              : currentPath === item.href ||
-                (item.href !== `/dashboard/${role}` &&
-                  currentPath.startsWith(`${item.href}/`));
-            return (
-              <Link
-                key={`${item.title}-${item.href}`}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors duration-150 lg:min-h-9",
-                  active
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                )}
-              >
-                <item.icon className="size-4 shrink-0 opacity-90" />
-                <span className="truncate">{item.title}</span>
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="space-y-5">
+          {sections.map((section) => (
+            <div key={section.group}>
+              <p className="text-meta-foreground px-2.5 text-[10px] font-semibold tracking-[0.08em] uppercase">
+                {section.label}
+              </p>
+              <nav className="mt-1.5 grid gap-0.5" aria-label={section.label}>
+                {section.items.map((item) => {
+                  const active = isNavActive(currentPath, role, item);
+                  return (
+                    <Link
+                      key={`${item.title}-${item.href}`}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        navItemBase,
+                        active ? navItemActive : navItemIdle,
+                      )}
+                    >
+                      <item.icon className="size-4 shrink-0" aria-hidden />
+                      <span className="truncate">{item.title}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+          ))}
+        </div>
       </ScrollArea>
-      <Separator className="bg-sidebar-border" />
-      <div className="text-muted-foreground px-4 py-3 text-xs leading-relaxed">
-        Navigation reflects your assigned role from{" "}
-        <code className="text-foreground text-[11px]">profiles.role</code>.
-      </div>
     </div>
   );
 }

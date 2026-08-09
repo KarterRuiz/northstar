@@ -1,68 +1,121 @@
 import Link from "next/link";
-import { CalendarCheck } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { WorkspaceSectionHeader } from "@/components/workspace/workspace-headers";
 import { loadAdminAttendanceOverviewMetrics } from "@/features/attendance/admin/load-admin-attendance-overview";
+
+import {
+  adminSignalBadgeVariant,
+  attendanceSignalStatus,
+} from "./admin-signal-status";
 
 const linkClass =
   "text-primary text-sm font-medium underline-offset-4 transition-colors duration-150 hover:underline";
 
+function plural(count: number, one: string, other: string): string {
+  return count === 1 ? one : other;
+}
+
 export async function AdminAttendanceOverview() {
   const metrics = await loadAdminAttendanceOverviewMetrics();
+  const isHealthy =
+    metrics.classesNotSubmitted === 0 && metrics.studentsNeedingFollowUp === 0;
+  const status = attendanceSignalStatus({
+    classesNotSubmitted: metrics.classesNotSubmitted,
+    studentsNeedingFollowUp: metrics.studentsNeedingFollowUp,
+  });
 
-  const cards = [
+  const summary = isHealthy
+    ? "All attendance is complete."
+    : [
+        metrics.classesNotSubmitted > 0
+          ? `${metrics.classesNotSubmitted} ${plural(
+              metrics.classesNotSubmitted,
+              "class",
+              "classes",
+            )} missing today's submission`
+          : null,
+        metrics.studentsNeedingFollowUp > 0
+          ? `${metrics.studentsNeedingFollowUp} ${plural(
+              metrics.studentsNeedingFollowUp,
+              "student",
+              "students",
+            )} needing follow-up`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+  const metricsRow = [
     {
-      title: "Absences today",
+      label: "Absences today",
       value: metrics.absencesToday,
       href: "/dashboard/admin/attendance",
     },
     {
-      title: "Classes missing attendance",
+      label: "Classes missing",
       value: metrics.classesNotSubmitted,
       href: "/dashboard/admin/attendance?status=missing",
     },
     {
-      title: "Students needing follow-up",
+      label: "Follow-up",
       value: metrics.studentsNeedingFollowUp,
       href: "/dashboard/admin/attendance",
     },
   ] as const;
 
   return (
-    <section aria-labelledby="admin-attendance-heading" className="space-y-4">
+    <section aria-labelledby="admin-attendance-heading" className="space-y-3">
       <WorkspaceSectionHeader
         id="admin-attendance-heading"
         eyebrow="Attendance"
-        title="Today's attendance signals"
-        description="Operational counts from class attendance submissions."
+        title="Today's attendance"
+        description={summary}
         actions={
-          <Link href="/dashboard/admin/attendance" className={linkClass}>
-            Open attendance monitoring
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant={adminSignalBadgeVariant(status)}
+              className="text-[11px] shadow-none"
+            >
+              {status}
+            </Badge>
+            <Link href="/dashboard/admin/attendance" className={linkClass}>
+              Open attendance
+            </Link>
+          </div>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-3">
-        {cards.map((card) => (
-          <Link key={card.title} href={card.href} className="group block rounded-xl">
-            <Card className="border-border/70 h-full shadow-sm transition-colors hover:bg-muted/40">
-              <CardHeader className="space-y-2 pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                  <CalendarCheck className="text-muted-foreground size-4" aria-hidden />
-                  {card.title}
-                </CardTitle>
-                <CardDescription className="text-xs">Tap to review</CardDescription>
-              </CardHeader>
-              <p className="px-6 pb-5 text-3xl font-semibold tabular-nums">{card.value}</p>
-            </Card>
-          </Link>
-        ))}
-      </div>
+
+      {isHealthy && metrics.absencesToday === 0 ? (
+        <div
+          role="status"
+          className="text-muted-foreground flex items-center gap-2.5 py-1"
+        >
+          <CheckCircle2 className="text-success size-4 shrink-0" aria-hidden />
+          <p className="ns-body">No absences recorded today.</p>
+        </div>
+      ) : (
+        <Card variant="compact" className="overflow-hidden p-0">
+          <div className="divide-border grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {metricsRow.map((row) => (
+              <Link
+                key={row.label}
+                href={row.href}
+                className="hover:bg-muted/40 focus-visible:ring-ring block px-4 py-3 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset"
+              >
+                <p className="text-muted-foreground text-xs font-medium">
+                  {row.label}
+                </p>
+                <p className="text-foreground mt-1 text-xl font-semibold tracking-tight tabular-nums">
+                  {row.value}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
     </section>
   );
 }

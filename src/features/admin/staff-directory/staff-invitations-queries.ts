@@ -24,7 +24,7 @@ export const fetchStaffInvitations = cache(
     const { data, error } = await supabase
       .from("staff_invitations")
       .select(
-        "id, email, full_name, first_name, last_name, role, status, invited_by, accepted_user_id, invite_token, expires_at, accepted_at, staff_note, pending_class_ids, created_at, updated_at",
+        "id, email, full_name, first_name, last_name, role, status, invited_by, accepted_user_id, invite_token, expires_at, accepted_at, sent_at, opened_at, staff_member_id, staff_note, pending_class_ids, pending_grade_level_ids, created_at, updated_at",
       )
       .order("created_at", { ascending: false });
 

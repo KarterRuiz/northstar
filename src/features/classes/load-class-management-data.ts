@@ -1,3 +1,7 @@
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
 import { formatStaffProfileLabel } from "@/lib/staff/format-staff-profile-label";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -100,10 +104,8 @@ export type ClassManagementPageData =
       ok: true;
       schoolYears: SchoolYearRow[];
       gradeLevels: GradeLevelRow[];
-      /** Classes matching URL filters (`q`, `status`, `grade`). */
+      /** Filtered classes for the overview table and summary metrics. */
       classes: ClassManagementClassRow[];
-      /** Full class list (ignores URL filters) for admin forms such as teacher assignment. */
-      allClasses: ClassManagementClassRow[];
       teachers: TeacherOption[];
       /** Distinct grade levels that appear on any class (for filter dropdown). */
       gradeFilterOptions: ClassManagementGradeFilterOption[];
@@ -119,21 +121,26 @@ export async function loadClassManagementPageData(
   if (!isSupabaseConfigured()) {
     return {
       ok: false,
-      message: "Supabase is not configured (missing URL or anon key).",
+      message: GENERIC_INFORMATION_LOAD_ERROR,
     };
   }
 
   const supabase = await createServerSupabaseClient();
 
+  // grade_levels.is_archived requires migration 20260807120000_grade_levels_archive_and_code_unique.
+  // school_years.is_current / archived_at require migration 20260807121000_school_years_current_and_archive.
   const [yearsRes, gradesRes, classesRes, teachersRes] = await Promise.all([
     supabase
       .from("school_years")
-      .select("id, label, starts_on, ends_on")
+      .select("id, label, starts_on, ends_on, is_current, archived_at, created_at, updated_at")
+      .is("archived_at", null)
+      .order("is_current", { ascending: false })
       .order("starts_on", { ascending: false }),
     supabase
       .from("grade_levels")
-      .select("id, name, sort_order, code")
-      .order("sort_order", { ascending: true }),
+      .select("id, name, sort_order, code, is_archived, created_at, updated_at")
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
     supabase
       .from("classes")
       .select(
@@ -148,19 +155,28 @@ export async function loadClassManagementPageData(
       .order("id"),
   ]);
 
-  const firstErr =
-    yearsRes.error?.message ||
-    gradesRes.error?.message ||
-    classesRes.error?.message ||
-    teachersRes.error?.message;
-
-  if (firstErr) {
-    return { ok: false, message: firstErr };
+  if (yearsRes.error) {
+    logServerError("class-management.loadPage.schoolYears", yearsRes.error.message);
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
+  }
+  if (gradesRes.error) {
+    logServerError("class-management.loadPage.gradeLevels", gradesRes.error.message);
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
+  }
+  if (classesRes.error) {
+    logServerError("class-management.loadPage.classes", classesRes.error.message);
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
+  }
+  if (teachersRes.error) {
+    logServerError("class-management.loadPage.teachers", teachersRes.error.message);
+    return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
   }
 
   const schoolYears = (yearsRes.data ?? []) as SchoolYearRow[];
-  const gradeLevels = (gradesRes.data ?? []) as GradeLevelRow[];
-  const validGradeIds = new Set(gradeLevels.map((g) => g.id));
+  const allGradeLevels = (gradesRes.data ?? []) as GradeLevelRow[];
+  /** Active grades only — used for class create pickers. */
+  const gradeLevels = allGradeLevels.filter((g) => !g.is_archived);
+  const validGradeIds = new Set(allGradeLevels.map((g) => g.id));
   const appliedFilters = parseClassManagementFilters(searchParams, validGradeIds);
   const classRows = (classesRes.data ?? []) as ClassRow[];
   const teachers: TeacherOption[] = (teachersRes.data ?? []).map((row) => ({
@@ -177,7 +193,7 @@ export async function loadClassManagementPageData(
   }));
 
   const yearById = new Map(schoolYears.map((y) => [y.id, y]));
-  const gradeById = new Map(gradeLevels.map((g) => [g.id, g]));
+  const gradeById = new Map(allGradeLevels.map((g) => [g.id, g]));
 
   let classTeachers: ClassTeacherRow[] = [];
   if (classRows.length > 0) {
@@ -187,7 +203,8 @@ export async function loadClassManagementPageData(
       .select("id, class_id, teacher_profile_id, role")
       .in("class_id", ids);
     if (ctRes.error) {
-      return { ok: false, message: ctRes.error.message };
+      logServerError("class-management.loadClassTeachers", ctRes.error.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
     classTeachers = (ctRes.data ?? []) as ClassTeacherRow[];
   }
@@ -203,7 +220,8 @@ export async function loadClassManagementPageData(
       .select("id, role, full_name, email")
       .in("id", teacherIds);
     if (profRes.error) {
-      return { ok: false, message: profRes.error.message };
+      logServerError("class-management.loadTeacherProfiles", profRes.error.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
     for (const row of profRes.data ?? []) {
       if (row?.id) {
@@ -244,7 +262,8 @@ export async function loadClassManagementPageData(
       .in("class_id", ids)
       .eq("status", "active");
     if (enrRes.error) {
-      return { ok: false, message: enrRes.error.message };
+      logServerError("class-management.loadEnrollments", enrRes.error.message);
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
     for (const row of enrRes.data ?? []) {
       const cid = row.class_id;
@@ -279,7 +298,7 @@ export async function loadClassManagementPageData(
   }));
 
   const gradeIdSet = new Set(classesUnfiltered.map((c) => c.grade_level_id));
-  const gradeFilterOptions: ClassManagementGradeFilterOption[] = gradeLevels
+  const gradeFilterOptions: ClassManagementGradeFilterOption[] = allGradeLevels
     .filter((g) => gradeIdSet.has(g.id))
     .map((g) => ({ id: g.id, name: g.name }));
 
@@ -290,7 +309,6 @@ export async function loadClassManagementPageData(
     schoolYears,
     gradeLevels,
     classes,
-    allClasses: classesUnfiltered,
     teachers,
     gradeFilterOptions,
     appliedFilters,

@@ -2,6 +2,12 @@ import "server-only";
 
 import { cache } from "react";
 
+import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+  safeUserFacingMessage,
+} from "@/lib/errors/safe-user-message";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
@@ -60,21 +66,16 @@ export const loadStudentFormClassOptions = cache(
     | { ok: false; message: string }
   > => {
     if (!isSupabaseConfigured()) {
-      return { ok: false, message: "Supabase is not configured." };
+      return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const supabase = await createServerSupabaseClient();
-    const { data: yearRows, error: yearError } = await supabase
-      .from("school_years")
-      .select("id")
-      .order("starts_on", { ascending: false })
-      .limit(1);
-
-    if (yearError) {
-      return { ok: false, message: yearError.message };
+    const currentYearResult = await loadCurrentSchoolYear(supabase);
+    if (!currentYearResult.ok) {
+      return { ok: false, message: currentYearResult.error };
     }
 
-    const currentSchoolYearId = yearRows?.[0]?.id ?? null;
+    const currentSchoolYearId = currentYearResult.year?.id ?? null;
 
     const { data, error } = await supabase
       .from("classes")
@@ -92,7 +93,14 @@ export const loadStudentFormClassOptions = cache(
       .limit(500);
 
     if (error) {
-      return { ok: false, message: error.message };
+      logServerError("student-form.loadClassOptions", error.message);
+      return {
+        ok: false,
+        message: safeUserFacingMessage(
+          error.message,
+          "Could not load classes. Try again.",
+        ),
+      };
     }
 
     const rows = (data ?? []) as unknown as ClassRow[];
@@ -147,22 +155,17 @@ export const loadStudentEditFormModel = cache(
       return { ok: false, kind: "error", message: "Invalid student id." };
     }
     if (!isSupabaseConfigured()) {
-      return { ok: false, kind: "error", message: "Supabase is not configured." };
+      return { ok: false, kind: "error", message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     const supabase = await createServerSupabaseClient();
 
-    const { data: yearRows, error: yearError } = await supabase
-      .from("school_years")
-      .select("id")
-      .order("starts_on", { ascending: false })
-      .limit(1);
-
-    if (yearError) {
-      return { ok: false, kind: "error", message: yearError.message };
+    const currentYearResult = await loadCurrentSchoolYear(supabase);
+    if (!currentYearResult.ok) {
+      return { ok: false, kind: "error", message: currentYearResult.error };
     }
 
-    const currentSchoolYearId = yearRows?.[0]?.id ?? null;
+    const currentSchoolYearId = currentYearResult.year?.id ?? null;
 
     const { data, error } = await supabase
       .from("students")
@@ -186,7 +189,15 @@ export const loadStudentEditFormModel = cache(
       .maybeSingle();
 
     if (error) {
-      return { ok: false, kind: "error", message: error.message };
+      logServerError("student-form.loadStudent", error.message);
+      return {
+        ok: false,
+        kind: "error",
+        message: safeUserFacingMessage(
+          error.message,
+          "Could not load this student. Try again.",
+        ),
+      };
     }
     if (!data) {
       return { ok: false, kind: "not_found" };

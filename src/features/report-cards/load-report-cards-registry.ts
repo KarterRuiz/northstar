@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  GENERIC_INFORMATION_LOAD_ERROR,
+  logServerError,
+} from "@/lib/errors/safe-user-message";
+import {
   isReportCardFileStatus,
   type ReportCardFileStatus,
 } from "@/lib/report-cards/status";
@@ -54,7 +58,11 @@ export async function loadActiveClassesForRegistry(
     .order("name");
 
   if (error || !data) {
-    return { options: [], error: error?.message ?? "Could not load classes." };
+    logServerError(
+      "report-cards.loadActiveClasses",
+      error?.message ?? "Could not load classes.",
+    );
+    return { options: [], error: GENERIC_INFORMATION_LOAD_ERROR };
   }
 
   const options = data.map((c) => ({
@@ -85,7 +93,8 @@ export async function loadReportCardsRegistry(
       .eq("status", "active");
 
     if (enErr) {
-      return { items: [], error: enErr.message };
+      logServerError("report-cards.registry.enrollments", enErr.message);
+      return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
     studentIdIn = [...new Set((en ?? []).map((r) => r.student_id))];
@@ -116,10 +125,11 @@ export async function loadReportCardsRegistry(
           supabase.from("students").select("id").ilike("last_name", like),
         ]);
       if (e1 || e2) {
-        return {
-          items: [],
-          error: e1?.message ?? e2?.message ?? "Student search failed.",
-        };
+        logServerError(
+          "report-cards.registry.studentSearch",
+          e1?.message ?? e2?.message ?? "Student search failed.",
+        );
+        return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
       }
       const nameSet = new Set(
         [...(s1 ?? []), ...(s2 ?? [])].map((r) => r.id),
@@ -174,7 +184,11 @@ export async function loadReportCardsRegistry(
   const { data, error } = await query;
 
   if (error || !data) {
-    return { items: [], error: error?.message ?? "Could not load report cards." };
+    logServerError(
+      "report-cards.registry.query",
+      error?.message ?? "Could not load report cards.",
+    );
+    return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
   }
 
   const items: ReportCardRegistryRow[] = (data as unknown as ReportCardJoinRow[]).map(

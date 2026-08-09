@@ -18,7 +18,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { AdminTeacherInviteAssignedClasses } from "@/features/admin/staff-directory/admin-assigned-classes-field";
-import type { ClassInviteOption } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
+import { AdminStaffGradeLevelsField } from "@/features/admin/staff-directory/admin-assigned-grade-levels-field";
+import type {
+  ClassInviteOption,
+  GradeInviteOption,
+} from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import {
   createStaffInvitationAction,
   type StaffInvitationActionState,
@@ -33,70 +37,59 @@ const INVITE_ROLE_OPTIONS: { value: Role; label: string }[] = [
 ];
 
 type InviteStaffSheetProps = {
+  gradeOptions: GradeInviteOption[];
   classOptions: ClassInviteOption[];
 };
 
 function InviteStaffFormBody({
   onClose,
+  gradeOptions,
   classOptions,
 }: {
   onClose: () => void;
+  gradeOptions: GradeInviteOption[];
   classOptions: ClassInviteOption[];
 }) {
   const [role, setRole] = useState<Role>("teacher");
+  const [selectedGradeIds, setSelectedGradeIds] = useState<string[]>([]);
   const [state, formAction, pending] = useActionState<
     StaffInvitationActionState | undefined,
     FormData
   >(createStaffInvitationAction, undefined);
 
   if (state?.ok) {
-    const emailOk = state.emailSent !== false;
+    const inviteUrl = state.inviteUrl || state.recoveryUrl;
     return (
       <div className="flex flex-col gap-4 pt-2">
         <p className="text-primary text-sm font-medium" role="status">
           {state.message}
         </p>
-        <p className="text-muted-foreground text-sm leading-relaxed">{state.setupSummary}</p>
-        {!emailOk ? (
-          <div
-            className="bg-muted/50 text-muted-foreground rounded-lg border px-3 py-2 text-sm"
-            role="note"
-          >
-            <p className="text-foreground font-medium">First sign-in</p>
-            <p className="mt-1">
-              An invitation row and optional class links are saved. When their account exists, the
-              profile and role apply automatically on first login with this email. Share the links
-              below so they can complete setup.
-            </p>
-          </div>
+        {state.setupSummary ? (
+          <p className="text-muted-foreground text-sm leading-relaxed">{state.setupSummary}</p>
         ) : null}
         <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-foreground text-xs font-medium uppercase tracking-wide">Sign-in page</p>
+          <p className="text-foreground text-xs font-medium uppercase tracking-wide">
+            Invite link
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Share this if they did not get the email, or to open sign-in directly.
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <code className="bg-muted max-w-full flex-1 truncate rounded px-2 py-1 text-xs">
-              {state.loginUrl}
+              {inviteUrl}
             </code>
-            <CopyTextButton text={state.loginUrl} label="Copy URL" />
+            <CopyTextButton text={inviteUrl} label="Copy invite link" />
           </div>
         </div>
         <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-foreground text-xs font-medium uppercase tracking-wide">Invited email</p>
+          <p className="text-foreground text-xs font-medium uppercase tracking-wide">
+            Invited email
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <code className="bg-muted max-w-full flex-1 truncate rounded px-2 py-1 text-xs">
               {state.invitedEmail}
             </code>
             <CopyTextButton text={state.invitedEmail} label="Copy email" />
-          </div>
-        </div>
-        <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-foreground text-xs font-medium uppercase tracking-wide">
-            Recovery link (bookmark-friendly)
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="bg-muted max-w-full flex-1 truncate rounded px-2 py-1 text-xs">
-              {state.recoveryUrl}
-            </code>
-            <CopyTextButton text={state.recoveryUrl} label="Copy link" />
           </div>
         </div>
         <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onClose}>
@@ -145,7 +138,7 @@ function InviteStaffFormBody({
           aria-describedby="invite-email-hint"
         />
         <p id="invite-email-hint" className="text-muted-foreground text-xs">
-          Use the email this staff member will use to sign in.
+          Use the email this staff member will use to sign in (matched lowercase + trimmed).
         </p>
       </div>
       <div className="space-y-2">
@@ -166,8 +159,19 @@ function InviteStaffFormBody({
           ))}
         </select>
       </div>
-      {role === "teacher" && classOptions.length > 0 ? (
-        <AdminTeacherInviteAssignedClasses options={classOptions} disabled={pending} />
+      {role === "teacher" ? (
+        <>
+          <AdminStaffGradeLevelsField
+            options={gradeOptions}
+            disabled={pending}
+            onSelectedIdsChange={setSelectedGradeIds}
+          />
+          <AdminTeacherInviteAssignedClasses
+            options={classOptions}
+            disabled={pending}
+            allowedGradeLevelIds={selectedGradeIds}
+          />
+        </>
       ) : null}
       <div className="space-y-2">
         <Label htmlFor="invite-note">Note to include in your own follow-up (optional)</Label>
@@ -185,34 +189,39 @@ function InviteStaffFormBody({
         </p>
       ) : null}
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-        {pending ? "Working…" : "Invite staff"}
+        {pending ? "Working…" : "Create & send invitation"}
       </Button>
     </form>
   );
 }
 
-export function InviteStaffSheet({ classOptions }: InviteStaffSheetProps) {
+/**
+ * Legacy combined create+invite path (email required — sends invitation immediately).
+ * Prefer Add staff + Send invitations on the staff directory.
+ */
+export function InviteStaffSheet({ gradeOptions, classOptions }: InviteStaffSheetProps) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button" className="gap-2">
+        <Button type="button" variant="outline" className="gap-2">
           <UserPlus className="h-4 w-4" aria-hidden />
-          Invite staff
+          Create & invite
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="sm:max-w-md">
+      <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Invite staff</SheetTitle>
+          <SheetTitle>Create & send invitation</SheetTitle>
           <SheetDescription>
-            Creates an invitation record and sends a sign-up email when the server is configured.
-            You can always copy the sign-in and recovery links for your own email or chat.
+            Legacy path that creates a roster row and sends an invitation in one step. Prefer Add
+            staff, then Send invitations, so you can build the roster without email.
           </SheetDescription>
         </SheetHeader>
         {open ? (
           <InviteStaffFormBody
+            gradeOptions={gradeOptions}
             classOptions={classOptions}
             onClose={() => {
               setOpen(false);

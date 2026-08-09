@@ -9,24 +9,38 @@ type DashboardHubSidebarProps = {
   switcherRoles: Role[];
 };
 
+function brandInitial() {
+  const trimmed = siteConfig.name.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : "N";
+}
+
 export function DashboardHubSidebar({ switcherRoles }: DashboardHubSidebarProps) {
   return (
     <div className="flex h-full flex-col">
-      <div className="px-4 py-5">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sidebar-foreground/80 text-[11px] font-semibold tracking-wider uppercase">
-            {siteConfig.name}
+      <div className="border-sidebar-border border-b px-4 py-4">
+        <div className="flex items-start gap-2.5">
+          <span
+            className="bg-sidebar-primary text-sidebar-primary-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold"
+            aria-hidden
+          >
+            {brandInitial()}
           </span>
-          <span className="text-sidebar-foreground line-clamp-2 text-sm font-semibold">
-            {siteConfig.tagline}
-          </span>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-heading text-sm font-semibold tracking-tight">
+              {siteConfig.name}
+            </span>
+            <span className="text-muted-foreground line-clamp-2 text-xs leading-snug">
+              {siteConfig.tagline}
+            </span>
+          </div>
         </div>
       </div>
-      <Separator className="bg-sidebar-border" />
       <div className="flex flex-1 flex-col gap-3 p-4">
-        <p className="text-muted-foreground text-sm leading-relaxed">
-          Open your assigned workspace. Other role dashboards are not available
-          for your account.
+        <p className="text-meta-foreground text-[10px] font-semibold tracking-[0.08em] uppercase">
+          Workspace
+        </p>
+        <p className="ns-muted -mt-1">
+          Choose a workspace for your role.
         </p>
         <div className="grid gap-0.5">
           {switcherRoles.map((r) => (
@@ -34,8 +48,8 @@ export function DashboardHubSidebar({ switcherRoles }: DashboardHubSidebarProps)
               key={r}
               href={`/dashboard/${r}`}
               className={cn(
-                "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md px-2.5 py-2.5 text-sm transition-colors duration-150",
-                "text-sidebar-foreground/90",
+                "rounded-lg px-2.5 py-2.5 text-sm transition-[color,background-color,box-shadow] duration-150 ease-out",
+                "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-xs",
               )}
             >
               {roleLabels[r]}
@@ -44,9 +58,8 @@ export function DashboardHubSidebar({ switcherRoles }: DashboardHubSidebarProps)
         </div>
       </div>
       <Separator className="bg-sidebar-border" />
-      <div className="text-muted-foreground px-4 py-3 text-xs leading-relaxed">
-        Navigation reflects your assigned role from{" "}
-        <code className="text-foreground text-[11px]">profiles.role</code>.
+      <div className="ns-meta px-4 py-3">
+        Need another role? Ask a school administrator.
       </div>
     </div>
   );

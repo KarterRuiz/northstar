@@ -2,6 +2,10 @@ import "server-only";
 
 import { cache } from "react";
 
+import {
+  logServerError,
+  safeUserFacingMessage,
+} from "@/lib/errors/safe-user-message";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
@@ -10,6 +14,17 @@ import {
   isParentRequestStatus,
   type ParentRequestStatus,
 } from "./constants";
+
+function parentRequestDbFail(scope: string, raw: string) {
+  logServerError(`parent-requests.${scope}`, raw);
+  return {
+    ok: false as const,
+    message: safeUserFacingMessage(
+      raw,
+      "Could not load parent requests. Try again.",
+    ),
+  };
+}
 
 function escapeIlikePattern(raw: string): string {
   return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
@@ -132,7 +147,7 @@ export const loadParentRequestsList = cache(
     const { data, error } = await query;
 
     if (error) {
-      return { ok: false, message: error.message };
+      return parentRequestDbFail("query", error.message);
     }
 
     const reqRows = data ?? [];
@@ -146,7 +161,7 @@ export const loadParentRequestsList = cache(
         .in("id", sidSet);
 
       if (studErr) {
-        return { ok: false, message: studErr.message };
+        return parentRequestDbFail("students", studErr.message);
       }
       for (const s of studs ?? []) {
         studentMap.set(s.id, s as StudentEmbed);
@@ -215,7 +230,7 @@ export async function loadParentRequestById(
     .maybeSingle();
 
   if (error) {
-    return { ok: false, message: error.message };
+    return parentRequestDbFail("query", error.message);
   }
   if (!data) {
     return { ok: false, message: "Request not found." };
@@ -270,3 +285,63 @@ export async function loadParentRequestById(
 
   return { ok: true, row, handler };
 }
+
+export const loadParentRequestsForStudent = cache(
+  async (studentId: string): Promise<ParentRequestListResult> => {
+    if (!isSupabaseConfigured()) {
+      return { ok: false, message: "Supabase is not configured." };
+    }
+
+    const supabase = await createServerSupabaseClient();
+    const { data, error } = await supabase
+      .from("parent_record_requests")
+      .select(
+        `
+        id,
+        student_id,
+        status,
+        requester_name,
+        requester_email,
+        requester_relationship,
+        requested_documents,
+        assigned_to_profile_id,
+        details,
+        staff_notes,
+        created_at,
+        updated_at
+      `,
+      )
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      return parentRequestDbFail("query", error.message);
+    }
+
+    const reqRows = data ?? [];
+    const rows: ParentRequestListRow[] = reqRows.map((row) => {
+      const st = row.status as string;
+      const status = isParentRequestStatus(st) ? st : "received";
+      return {
+        id: row.id,
+        student_id: row.student_id,
+        status,
+        requester_name: row.requester_name,
+        requester_email: row.requester_email,
+        requester_relationship: row.requester_relationship ?? "",
+        requested_documents: Array.isArray(row.requested_documents)
+          ? row.requested_documents
+          : [],
+        assigned_to_profile_id: row.assigned_to_profile_id ?? null,
+        details: row.details ?? null,
+        staff_notes: row.staff_notes ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        student: null,
+      };
+    });
+
+    return { ok: true, rows };
+  },
+);

@@ -24,7 +24,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import type { Role } from "@/config/roles";
+import {
+  canManageParentRecordRequests,
+  type Role,
+} from "@/config/roles";
 import {
   reportReadinessStatusLabel,
   type ReportReadinessStatus,
@@ -38,9 +41,15 @@ import {
 import { AttendanceRiskBadge } from "@/features/attendance/attendance-risk-badge";
 import { loadStudentBehaviorProfile } from "@/features/attendance-behavior/load-student-behavior-profile";
 
+import { loadStudentInterventions } from "@/features/interventions/load-student-interventions";
+import { InterventionStatusBadge } from "@/features/interventions/intervention-badges";
+import { loadParentRequestsForStudent } from "@/features/parent-requests/load-parent-requests";
+import { ParentRequestStatusBadge } from "@/features/parent-requests/parent-request-status-badge";
+
 import { loadStudentIntelligence } from "../load-student-intelligence";
 import { ProfileEmptyState } from "../profile-empty-state";
 import {
+  getReportCardSummaries,
   loadStudentProfileResult,
   loadTransitionNotes,
 } from "../supabase-profile-data";
@@ -63,11 +72,24 @@ function readinessVariant(
 
 export async function OverviewTab({ studentId, role }: OverviewTabProps) {
   const result = await loadStudentProfileResult(studentId);
-  const [intel, notesLoad, attendanceLoad, behaviorLoad] = await Promise.all([
+  const [
+    intel,
+    notesLoad,
+    attendanceLoad,
+    behaviorLoad,
+    interventionsLoad,
+    reportRows,
+    parentReqLoad,
+  ] = await Promise.all([
     loadStudentIntelligence(studentId, { viewerRole: role }),
     loadTransitionNotes(studentId),
     loadStudentAttendanceProfile(studentId, role),
     loadStudentBehaviorProfile(studentId, role),
+    loadStudentInterventions(studentId),
+    getReportCardSummaries(studentId),
+    canManageParentRecordRequests(role)
+      ? loadParentRequestsForStudent(studentId)
+      : Promise.resolve({ ok: true as const, rows: [] }),
   ]);
   const base = `/dashboard/${role}/students/${studentId}`;
 
@@ -98,8 +120,109 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
       ? notesLoad.notes[0]
       : null;
 
+  const attendancePctLabel =
+    attendanceLoad.ok && attendanceLoad.termAttendancePct != null
+      ? `${Math.round(attendanceLoad.termAttendancePct)}%`
+      : "—";
+  const activeInterventions =
+    interventionsLoad.ok === true
+      ? interventionsLoad.interventions.filter((i) =>
+          ["active", "monitoring", "escalated"].includes(i.status),
+        )
+      : [];
+  const parentRows = parentReqLoad.ok === true ? parentReqLoad.rows : [];
+  const openParentRequests = parentRows.filter((r) =>
+    ["received", "approved"].includes(r.status),
+  ).length;
+  const latestReport = reportRows[0] ?? null;
+  const recentConcerns =
+    behaviorLoad.ok === true ? behaviorLoad.concerns.slice(0, 4) : [];
+
   return (
     <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className={CARD_CHROME}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Attendance (term)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums">{attendancePctLabel}</p>
+            <Link
+              href={`${base}/attendance`}
+              className="text-primary mt-2 inline-block text-xs font-medium underline-offset-4 hover:underline"
+            >
+              Recent marks
+            </Link>
+          </CardContent>
+        </Card>
+        <Card className={CARD_CHROME}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Class average
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums">
+              {readiness?.overallPercent != null
+                ? formatOverallGrade({
+                    percent: readiness.overallPercent,
+                    letter: readiness.overallLetter,
+                    isPartial: readiness.isPartialGrade,
+                  })
+                : "—"}
+            </p>
+            <Link
+              href={`${base}/academics`}
+              className="text-primary mt-2 inline-block text-xs font-medium underline-offset-4 hover:underline"
+            >
+              Academics tab
+            </Link>
+          </CardContent>
+        </Card>
+        <Card className={CARD_CHROME}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Open interventions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums">{activeInterventions.length}</p>
+            <Link
+              href={`${base}/interventions`}
+              className="text-primary mt-2 inline-block text-xs font-medium underline-offset-4 hover:underline"
+            >
+              Manage supports
+            </Link>
+          </CardContent>
+        </Card>
+        <Card className={CARD_CHROME}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Open parent requests
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold tabular-nums">
+              {canManageParentRecordRequests(role) ? openParentRequests : "—"}
+            </p>
+            {canManageParentRecordRequests(role) ? (
+              <Link
+                href={`${base}/parent-communication`}
+                className="text-primary mt-2 inline-block text-xs font-medium underline-offset-4 hover:underline"
+              >
+                Communication hub
+              </Link>
+            ) : (
+              <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
+                Visible to registrars &amp; leadership
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className={`${CARD_CHROME} lg:col-span-2`}>
           <CardHeader className="space-y-1 pb-4">
@@ -208,10 +331,10 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
               <CardDescription>From the class gradebook.</CardDescription>
             </div>
             <Link
-              href={`${base}/grades`}
+              href={`${base}/academics`}
               className="text-primary text-xs font-medium underline-offset-4 hover:underline"
             >
-              View grades
+              View academics
             </Link>
           </CardHeader>
           <CardContent>
@@ -270,13 +393,24 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
                   <dt className="text-muted-foreground">Tardies</dt>
                   <dd className="font-semibold tabular-nums">{attendanceLoad.termTardies}</dd>
                 </div>
-                {attendanceLoad.recent[0] ? (
+                {attendanceLoad.recent.length > 0 ? (
                   <div className="border-border/60 border-t pt-3">
-                    <p className="text-muted-foreground text-xs">Most recent</p>
-                    <p className="mt-1 font-medium">
-                      {attendanceStatusLabels[attendanceLoad.recent[0].status]} ·{" "}
-                      {attendanceLoad.recent[0].attendanceDate}
+                    <p className="text-muted-foreground mb-2 text-xs font-medium uppercase">
+                      Recent attendance
                     </p>
+                    <ul className="space-y-1.5 text-xs">
+                      {attendanceLoad.recent.slice(0, 5).map((rec) => (
+                        <li
+                          key={rec.id}
+                          className="flex justify-between gap-3 tabular-nums"
+                        >
+                          <span className="text-muted-foreground">{rec.attendanceDate}</span>
+                          <span className="font-medium">
+                            {attendanceStatusLabels[rec.status]}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ) : null}
                 <div className="border-border/60 flex flex-wrap items-center gap-2 border-t pt-3">
@@ -300,7 +434,7 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
         <Card className={CARD_CHROME}>
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
             <div className="space-y-1">
-              <CardTitle className="text-base">Student support</CardTitle>
+              <CardTitle className="text-base">Behavior</CardTitle>
               <CardDescription>Recognitions and documented support moments.</CardDescription>
             </div>
             <Link
@@ -341,6 +475,175 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
           </CardContent>
         </Card>
       </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Card className={CARD_CHROME}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Current interventions</CardTitle>
+              <CardDescription>Active, monitoring, or escalated supports.</CardDescription>
+            </div>
+            <Link
+              href={`${base}/interventions`}
+              className="text-primary text-xs font-medium underline-offset-4 hover:underline"
+            >
+              View all
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {interventionsLoad.ok !== true ? (
+              <p className="text-muted-foreground text-sm">{interventionsLoad.message}</p>
+            ) : activeInterventions.length === 0 ? (
+              <ProfileEmptyState
+                icon={ClipboardList}
+                title="No open interventions"
+                description="When a support plan is active for this student, it appears here."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {activeInterventions.slice(0, 4).map((row) => (
+                  <li key={row.id} className="border-border/60 space-y-1 rounded-lg border px-3 py-2">
+                    <p className="text-sm font-medium leading-snug">{row.title}</p>
+                    <InterventionStatusBadge status={row.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={CARD_CHROME}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Parent requests</CardTitle>
+              <CardDescription>Formal record requests for this student.</CardDescription>
+            </div>
+            {canManageParentRecordRequests(role) ? (
+              <Link
+                href={`${base}/parent-communication`}
+                className="text-primary text-xs font-medium underline-offset-4 hover:underline"
+              >
+                Hub
+              </Link>
+            ) : null}
+          </CardHeader>
+          <CardContent>
+            {!canManageParentRecordRequests(role) ? (
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Parent record requests are listed for registrars and school leadership in the
+                Parent communication tab.
+              </p>
+            ) : parentReqLoad.ok !== true ? (
+              <p className="text-destructive text-sm" role="alert">
+                {parentReqLoad.message}
+              </p>
+            ) : parentRows.length === 0 ? (
+              <ProfileEmptyState
+                icon={ClipboardList}
+                title="No requests on file"
+                description="Create a parent record request when a family asks for official documents."
+              />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-muted-foreground text-xs font-semibold uppercase">
+                      Opened
+                    </TableHead>
+                    <TableHead className="text-muted-foreground text-xs font-semibold uppercase">
+                      Status
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {parentRows.slice(0, 4).map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="text-sm tabular-nums">
+                        {row.created_at.slice(0, 10)}
+                      </TableCell>
+                      <TableCell>
+                        <ParentRequestStatusBadge status={row.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={CARD_CHROME}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Latest report card</CardTitle>
+              <CardDescription>Most recently issued PDF on file.</CardDescription>
+            </div>
+            <Link
+              href={`${base}/report-cards`}
+              className="text-primary text-xs font-medium underline-offset-4 hover:underline"
+            >
+              All PDFs
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {latestReport ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium leading-snug">{latestReport.headline}</p>
+                <p className="text-muted-foreground text-xs">
+                  {latestReport.academicYear} · {latestReport.termLabel} · Issued{" "}
+                  {latestReport.issuedOn}
+                </p>
+                <Badge variant="secondary" className="capitalize">
+                  {latestReport.status}
+                </Badge>
+              </div>
+            ) : (
+              <ProfileEmptyState
+                icon={ClipboardList}
+                title="No report cards yet"
+                description="When a PDF is uploaded for this student, its status appears here."
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {recentConcerns.length > 0 ? (
+        <Card className={CARD_CHROME}>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-4">
+            <div className="space-y-1">
+              <CardTitle className="text-base">Recent behavior incidents</CardTitle>
+              <CardDescription>Support concerns (medium or higher) from the class log.</CardDescription>
+            </div>
+            <Link
+              href={`${base}/behavior`}
+              className="text-primary text-xs font-medium underline-offset-4 hover:underline"
+            >
+              View timeline
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {recentConcerns.map((row) => (
+                <li
+                  key={row.id}
+                  className="border-border/60 flex flex-col gap-1 rounded-lg border px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium leading-snug">
+                      {row.generatedSummary?.trim() || row.title}
+                    </p>
+                    <p className="text-muted-foreground text-xs tabular-nums">{row.behaviorDate}</p>
+                  </div>
+                  <Badge variant="outline" className="w-fit shrink-0 text-[10px] capitalize">
+                    {row.severity}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className={CARD_CHROME}>
         <CardHeader className="space-y-1 pb-4">

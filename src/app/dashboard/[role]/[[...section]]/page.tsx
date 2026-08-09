@@ -1,7 +1,12 @@
 import { notFound } from "next/navigation";
 
 import { SectionPlaceholder } from "@/components/workspace/section-placeholder";
-import { isRole, roleLabels, type Role } from "@/config/roles";
+import {
+  isLeadershipAuditRole,
+  isRole,
+  roleLabels,
+  type Role,
+} from "@/config/roles";
 import { AdminDashboardHome } from "@/features/admin/dashboard/admin-dashboard-home";
 import { getAdminSectionShellProps } from "@/features/admin/sections/admin-section-shell";
 import { TeacherDashboardHome } from "@/features/teacher/dashboard/teacher-dashboard-home";
@@ -34,7 +39,7 @@ export default async function DashboardRoleSectionPage({ params }: PageProps) {
 
   const typedRole = role as Role;
 
-  if (typedRole === "admin" && !hasSection) {
+  if (isLeadershipAuditRole(typedRole) && !hasSection) {
     return <AdminDashboardHome />;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -178,6 +178,11 @@ export function StaffTeacherClassesPanel({
 
 type StaffTeacherClassesDialogProps = StaffTeacherClassesPanelProps & {
   teacherLabel: string;
+  /** Custom trigger; defaults to a compact Classes button. */
+  trigger?: ReactNode;
+  /** Controlled open state (e.g. Actions menu → Manage classes). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function StaffTeacherClassesDialog({
@@ -185,17 +190,25 @@ export function StaffTeacherClassesDialog({
   teacherLabel,
   assigned,
   availableClasses,
+  trigger,
+  open,
+  onOpenChange,
 }: StaffTeacherClassesDialogProps) {
+  const controlled = open !== undefined;
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          Classes
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {!controlled || trigger ? (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button type="button" variant="outline" size="sm">
+              Classes
+            </Button>
+          )}
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Class assignments</DialogTitle>
+          <DialogTitle>Manage classes</DialogTitle>
           <DialogDescription>{teacherLabel}</DialogDescription>
         </DialogHeader>
         <StaffTeacherClassesPanel

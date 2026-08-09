@@ -24,9 +24,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DirectoryClickableRow,
+  DirectoryRowHitTarget,
+} from "@/components/workspace/directory-clickable-row";
+import { DirectoryPeopleCell } from "@/components/workspace/directory-people-cell";
+import {
+  DirectoryToolbar,
+  DirectoryToolbarFilters,
+  DirectoryToolbarSearch,
+} from "@/components/workspace/directory-toolbar";
 import { ListEmptyState } from "@/components/workspace/list-empty-state";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import { assertStudentDirectoryAccess } from "@/features/students/profile/access";
+import { StudentsAddMenu } from "@/features/students/students-add-menu";
 import { loadStudentDirectory } from "@/features/students/student-directory-queries";
 
 import StudentsDirectoryLoading from "./loading";
@@ -39,6 +50,18 @@ type PageProps = {
   params: Promise<{ role: string }>;
   searchParams: Promise<{ q?: string | string[] }>;
 };
+
+function formatStudentNumber(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "—") return "Not assigned";
+  return trimmed;
+}
+
+function formatDirectoryDash(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "—") return "—";
+  return trimmed;
+}
 
 async function StudentsDirectoryResults({
   role,
@@ -62,43 +85,46 @@ async function StudentsDirectoryResults({
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Directory</CardTitle>
-          <CardDescription>
-            Active enrollments only. Links open the student profile for this
-            workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardHeader density="compact" className="space-y-3 pb-3 sm:pb-3">
+          <div className="space-y-1">
+            <CardTitle>Directory</CardTitle>
+            <CardDescription>
+              Active enrollments. Open a row to view the student profile.
+            </CardDescription>
+          </div>
           <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
             action={`/dashboard/${role}/students`}
             method="get"
             role="search"
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <label htmlFor="student-search" className="text-sm font-medium">
-                Search
-              </label>
-              <Input
-                id="student-search"
-                name="q"
-                type="search"
-                placeholder="Name or external ID…"
-                defaultValue={searchQuery ?? ""}
-                autoComplete="off"
-              />
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button type="submit">Search</Button>
-              {searchQuery ? (
-                <Button variant="outline" asChild>
-                  <Link href={`/dashboard/${role}/students`}>Clear</Link>
+            <DirectoryToolbar className="border-0 pb-0">
+              <DirectoryToolbarSearch>
+                <label htmlFor="student-search" className="sr-only">
+                  Search students
+                </label>
+                <Input
+                  id="student-search"
+                  name="q"
+                  type="search"
+                  placeholder="Search by name or student number…"
+                  defaultValue={searchQuery ?? ""}
+                  autoComplete="off"
+                />
+              </DirectoryToolbarSearch>
+              <DirectoryToolbarFilters>
+                <Button type="submit" size="sm">
+                  Search
                 </Button>
-              ) : null}
-            </div>
+                {searchQuery ? (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/dashboard/${role}/students`}>Clear</Link>
+                  </Button>
+                ) : null}
+              </DirectoryToolbarFilters>
+            </DirectoryToolbar>
           </form>
-
+        </CardHeader>
+        <CardContent density="compact" className="space-y-3">
           {result.students.length === 0 && result.ok ? (
             <ListEmptyState
               icon={Search}
@@ -109,46 +135,59 @@ async function StudentsDirectoryResults({
               }
               description={
                 searchQuery
-                  ? "Try a different name or external ID, or clear the filter to see the full active roster."
-                  : "Seed enrollments or add rows in Supabase to see learners appear in this directory."
+                  ? "Try a different name or student number, or clear search to see the full active roster."
+                  : "Add a single student or import a CSV/Excel roster to populate the directory."
               }
             />
           ) : (
             <Table aria-label="Students directory">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Student #</TableHead>
+                  <TableHead>Student</TableHead>
                   <TableHead>Grade</TableHead>
                   <TableHead className="hidden md:table-cell">Class</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.students.map((student) => (
-                  <TableRow key={student.id}>
-                    <TableCell>
-                      <Link
-                        href={`/dashboard/${role}/students/${student.id}/overview`}
-                        className="font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        {student.fullName}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden font-mono text-sm sm:table-cell">
-                      {student.studentNumber}
-                    </TableCell>
-                    <TableCell>{student.gradeLevel}</TableCell>
-                    <TableCell className="hidden max-w-[14rem] truncate md:table-cell">
-                      {student.classLabel}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="capitalize">
-                        {student.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {result.students.map((student) => {
+                  const href = `/dashboard/${role}/students/${student.id}/overview`;
+                  const numberLabel = formatStudentNumber(student.studentNumber);
+                  const numberAssigned = numberLabel !== "Not assigned";
+                  return (
+                    <DirectoryClickableRow key={student.id}>
+                      <TableCell>
+                        <DirectoryRowHitTarget
+                          href={href}
+                          label={`Open ${student.fullName}`}
+                        />
+                        <DirectoryPeopleCell
+                          name={student.fullName}
+                          meta={
+                            numberAssigned ? (
+                              <span className="font-mono">{numberLabel}</span>
+                            ) : (
+                              <span className="text-muted-foreground/80">
+                                Not assigned
+                              </span>
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="relative z-[2]">
+                        {formatDirectoryDash(student.gradeLevel)}
+                      </TableCell>
+                      <TableCell className="relative z-[2] hidden max-w-[14rem] truncate md:table-cell">
+                        {formatDirectoryDash(student.classLabel)}
+                      </TableCell>
+                      <TableCell className="relative z-[2]">
+                        <Badge variant="success" className="capitalize">
+                          {student.status}
+                        </Badge>
+                      </TableCell>
+                    </DirectoryClickableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -173,18 +212,12 @@ export default async function StudentsDirectoryPage({
     typeof rawQ === "string" ? rawQ : Array.isArray(rawQ) ? rawQ[0] : undefined;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
+    <div className="ns-page-shell">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="Students"
-        description="Live directory from Supabase (RLS applies). Teachers only see learners in their assigned classes; leadership and registrar see the full roster."
-        actions={
-          canManageStudents(role) ? (
-            <Button asChild>
-              <Link href={`/dashboard/${role}/students/new`}>Add student</Link>
-            </Button>
-          ) : null
-        }
+        description="Search the active roster and open a student profile. Teachers see learners in their assigned classes; leadership and registrar see the full roster."
+        actions={canManageStudents(role) ? <StudentsAddMenu role={role} /> : null}
       />
 
       <Suspense fallback={<StudentsDirectoryLoading />} key={searchQuery ?? ""}>

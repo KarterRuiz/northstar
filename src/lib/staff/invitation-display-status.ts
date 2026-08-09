@@ -42,3 +42,12 @@ export function staffInvitationStatusLabel(
       return s;
   }
 }
+
+/** Pending or expired — needs admin action in the default invitations list. */
+export function isActionableStaffInvitation(row: {
+  status: InvitationStatus;
+  expires_at?: string | null;
+}): boolean {
+  const display = staffInvitationDisplayStatus(row);
+  return display === "pending" || display === "expired";
+}

@@ -6,6 +6,13 @@ import { getStaffDirectoryManagerActor } from "@/lib/auth/require-staff-director
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export type GradeInviteOption = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  code: string | null;
+};
+
 export type ClassInviteOption = {
   id: string;
   /** Full row label (year · grade · class · optional section). */
@@ -19,17 +26,27 @@ export type ClassInviteOption = {
   section: string | null;
 };
 
-export const loadActiveClassesForStaffInvite = cache(
-  async (): Promise<ClassInviteOption[]> => {
-    if (!isSupabaseConfigured()) return [];
+export type StaffInviteAccessOptions = {
+  grades: GradeInviteOption[];
+  classes: ClassInviteOption[];
+};
+
+export const loadStaffInviteAccessOptions = cache(
+  async (): Promise<StaffInviteAccessOptions> => {
+    if (!isSupabaseConfigured()) return { grades: [], classes: [] };
 
     const supabase = await createServerSupabaseClient();
     const actor = await getStaffDirectoryManagerActor(supabase);
-    if (!actor) return [];
+    if (!actor) return { grades: [], classes: [] };
 
     const [yearsRes, gradesRes, classesRes] = await Promise.all([
       supabase.from("school_years").select("id, label").order("starts_on", { ascending: false }),
-      supabase.from("grade_levels").select("id, name, sort_order").order("sort_order", { ascending: true }),
+      supabase
+        .from("grade_levels")
+        .select("id, name, sort_order, code, is_archived")
+        .eq("is_archived", false)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true }),
       supabase
         .from("classes")
         .select("id, name, section, school_year_id, grade_level_id")
@@ -37,17 +54,21 @@ export const loadActiveClassesForStaffInvite = cache(
         .order("name", { ascending: true }),
     ]);
 
-    if (yearsRes.error || gradesRes.error || classesRes.error) return [];
+    if (yearsRes.error || gradesRes.error || classesRes.error) {
+      return { grades: [], classes: [] };
+    }
+
+    const grades: GradeInviteOption[] = (gradesRes.data ?? []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      sortOrder: typeof g.sort_order === "number" ? g.sort_order : 0,
+      code: g.code?.trim() || null,
+    }));
 
     const yearLabel = new Map((yearsRes.data ?? []).map((y) => [y.id, y.label]));
-    const gradeById = new Map(
-      (gradesRes.data ?? []).map((g) => [
-        g.id,
-        { name: g.name, sortOrder: typeof g.sort_order === "number" ? g.sort_order : 0 },
-      ]),
-    );
+    const gradeById = new Map(grades.map((g) => [g.id, g]));
 
-    const rows = (classesRes.data ?? []).map((row) => {
+    const classes = (classesRes.data ?? []).map((row) => {
       const yl = yearLabel.get(row.school_year_id) ?? "—";
       const grade = gradeById.get(row.grade_level_id);
       const gn = grade?.name ?? "—";
@@ -66,11 +87,19 @@ export const loadActiveClassesForStaffInvite = cache(
       };
     });
 
-    rows.sort((a, b) => {
+    classes.sort((a, b) => {
       if (a.gradeSortOrder !== b.gradeSortOrder) return a.gradeSortOrder - b.gradeSortOrder;
+      const byGrade = a.gradeName.localeCompare(b.gradeName, undefined, { sensitivity: "base" });
+      if (byGrade !== 0) return byGrade;
       return a.className.localeCompare(b.className, undefined, { sensitivity: "base" });
     });
 
-    return rows;
+    return { grades, classes };
   },
 );
+
+/** @deprecated Prefer `loadStaffInviteAccessOptions().classes`. */
+export const loadActiveClassesForStaffInvite = cache(async (): Promise<ClassInviteOption[]> => {
+  const { classes } = await loadStaffInviteAccessOptions();
+  return classes;
+});

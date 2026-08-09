@@ -6,17 +6,19 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { mapSchoolSettingsRow } from "./map-school-settings-row";
+import { logSchoolSettingsError } from "./safe-admin-error";
 
 export type LoadSchoolSettingsResult =
   | { ok: true; settings: SchoolSettingsRow }
   | { ok: false; message: string };
 
+const SCHOOL_SETTINGS_LOAD_ERROR =
+  "School settings could not be loaded. Try again.";
+
 export async function loadSchoolSettings(): Promise<LoadSchoolSettingsResult> {
   if (!isSupabaseConfigured()) {
-    return {
-      ok: false,
-      message: "Supabase is not configured.",
-    };
+    logSchoolSettingsError("loadSchoolSettings", "Supabase is not configured");
+    return { ok: false, message: SCHOOL_SETTINGS_LOAD_ERROR };
   }
 
   const supabase = await createServerSupabaseClient();
@@ -29,11 +31,16 @@ export async function loadSchoolSettings(): Promise<LoadSchoolSettingsResult> {
     .maybeSingle();
 
   if (error) {
-    return { ok: false, message: error.message || "Could not load school settings." };
+    logSchoolSettingsError("loadSchoolSettings", error.message);
+    return { ok: false, message: SCHOOL_SETTINGS_LOAD_ERROR };
   }
 
   if (!data) {
-    return { ok: false, message: "School settings are not initialized." };
+    logSchoolSettingsError("loadSchoolSettings", "School settings row missing");
+    return {
+      ok: false,
+      message: "School settings are not initialized. Contact support if this continues.",
+    };
   }
 
   return { ok: true, settings: mapSchoolSettingsRow(data) };

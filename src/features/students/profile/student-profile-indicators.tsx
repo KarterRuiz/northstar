@@ -159,7 +159,7 @@ export async function StudentProfileIndicators({
               ? "Partial — not all categories scored"
               : "From gradebook weights"
           }
-          href={`${base}/grades`}
+          href={`${base}/academics`}
         />
         <IndicatorCard
           icon={AlertCircle}
@@ -170,7 +170,7 @@ export async function StudentProfileIndicators({
               ? "Needs scores or marked missing"
               : "All in-scope assignments entered"
           }
-          href={`${base}/grades`}
+          href={`${base}/academics`}
           valueClassName={
             readiness.missingAssignmentCount > 0 ? "text-destructive" : undefined
           }

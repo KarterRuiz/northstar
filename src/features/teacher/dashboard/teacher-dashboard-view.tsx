@@ -95,11 +95,11 @@ export async function TeacherDashboardView() {
 
   if (!data.ok) {
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
+      <div className="ns-page-shell-wide">
         <WorkspacePageHeader
           eyebrow={siteConfig.shortName}
           title="Teacher overview"
-          description="Your assigned classes and learners from Supabase."
+          description="Your classes, students, and what still needs follow-up."
         />
         <div
           className="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
@@ -118,28 +118,15 @@ export async function TeacherDashboardView() {
   const missingReport = roster.filter((r) => !r.reportCardFileForYear);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
+    <div className="ns-page-shell-wide">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="Teacher overview"
-        description={
-          <>
-            Classes and students come from your{" "}
-            <span className="text-foreground font-medium">class teacher</span>{" "}
-            assignments and active enrollments only. Report card completion uses
-            the latest school year label
-            {currentSchoolYearLabel ? (
-              <>
-                :{" "}
-                <span className="text-foreground font-medium">
-                  {currentSchoolYearLabel}
-                </span>
-              </>
-            ) : (
-              " (none configured yet)"
-            )}
-            .
-          </>
+        description="Your classes, students, and what still needs follow-up."
+        footer={
+          currentSchoolYearLabel
+            ? `Current school year: ${currentSchoolYearLabel}`
+            : "No current school year configured yet."
         }
       />
 
@@ -161,55 +148,72 @@ export async function TeacherDashboardView() {
         <WorkspaceSectionHeader
           id="assigned-classes-heading"
           eyebrow="Classes"
-          title="Assigned classes"
-          description="Homeroom and co-teaching assignments from class_teachers."
+          title="My classes"
+          description="Only classes you can access — assigned teaching or grade-scoped when no class assignments exist."
         />
         {classes.length === 0 ? (
           <ListEmptyState
             title="No classes assigned yet"
-            description="When leadership links your profile to classes under Classes, they will appear here with live enrollment counts."
+            description="When leadership assigns your grade levels or classes, they will appear here with live enrollment counts."
           />
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {classes.map((cls) => (
-              <li key={cls.id}>
-                <Card className="h-full">
-                  <CardHeader className="space-y-1 pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-base leading-snug">
-                        <Link
-                          href={`${BASE}/classes/${cls.id}`}
-                          className="text-primary underline-offset-4 hover:underline"
-                        >
-                          {cls.name}
-                        </Link>
-                      </CardTitle>
-                      <Badge variant="secondary" className="shrink-0 capitalize">
-                        {cls.assignmentRole}
-                      </Badge>
-                    </div>
-                    <CardDescription>
-                      {cls.gradeName} · {cls.schoolYearLabel}
-                      {cls.section ? ` · ${cls.section}` : ""}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <p>
-                      <span className="text-foreground font-medium">
-                        {cls.studentCount}
-                      </span>{" "}
-                      students
-                    </p>
-                    {!cls.isActive ? (
-                      <Badge variant="outline" className="text-xs">
-                        Inactive class
-                      </Badge>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
+          <>
+            {classes.length === 1 ? (
+              <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-foreground text-sm font-medium">Your class</p>
+                  <p className="text-muted-foreground text-xs">
+                    {classes[0]!.name}
+                    {classes[0]!.section ? ` · ${classes[0]!.section}` : ""} ·{" "}
+                    {classes[0]!.gradeName}
+                  </p>
+                </div>
+                <Button asChild size="sm">
+                  <Link href={`${BASE}/classes/${classes[0]!.id}`}>Open class</Link>
+                </Button>
+              </div>
+            ) : null}
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {classes.map((cls) => (
+                <li key={cls.id}>
+                  <Card className="h-full">
+                    <CardHeader className="space-y-1 pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base leading-snug">
+                          <Link
+                            href={`${BASE}/classes/${cls.id}`}
+                            className="text-primary underline-offset-4 hover:underline"
+                          >
+                            {cls.name}
+                          </Link>
+                        </CardTitle>
+                        <Badge variant="secondary" className="shrink-0 capitalize">
+                          {cls.assignmentRole.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                      <CardDescription>
+                        {cls.gradeName} · {cls.schoolYearLabel}
+                        {cls.section ? ` · ${cls.section}` : ""}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <p>
+                        <span className="text-foreground font-medium">
+                          {cls.studentCount}
+                        </span>{" "}
+                        students
+                      </p>
+                      {!cls.isActive ? (
+                        <Badge variant="outline" className="text-xs">
+                          Inactive class
+                        </Badge>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
@@ -360,7 +364,7 @@ export async function TeacherDashboardView() {
                 ? `Missing report card file (${currentSchoolYearLabel})`
                 : "Missing report card file"
             }
-            description="Compared to report_card_files for the latest school year label."
+            description="Compared to report_card_files for the Current school year label."
           />
           <Card>
             <CardContent className="p-0 sm:p-0">

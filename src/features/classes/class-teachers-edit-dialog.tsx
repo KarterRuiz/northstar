@@ -64,17 +64,16 @@ function buildInitialForm(klass: ClassManagementClassRow): {
 export function ClassTeachersEditDialog({
   klass,
   teachers,
-  disabled,
-  disabledReason,
+  open,
+  onOpenChange,
 }: {
   klass: ClassManagementClassRow;
   teachers: TeacherOption[];
-  disabled: boolean;
-  disabledReason?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
   const { toast, showToast } = useWorkspaceToast();
-  const [open, setOpen] = useState(false);
   const [homeroomId, setHomeroomId] = useState("");
   const [lines, setLines] = useState<AdditionalLine[]>([]);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -145,7 +144,7 @@ export function ClassTeachersEditDialog({
         const res = await saveClassTeachersAction(undefined, fd);
         if (res.ok) {
           showToast("success", res.message ?? "Class teachers were saved.");
-          setOpen(false);
+          onOpenChange(false);
           router.refresh();
         } else {
           setServerError(res.error);
@@ -158,184 +157,174 @@ export function ClassTeachersEditDialog({
   const classHeading = klass.name.trim() || "Class";
 
   return (
-    <>
-      <span title={disabled ? disabledReason : undefined}>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={disabled}
-          onClick={() => setOpen(true)}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit teachers</DialogTitle>
+          <DialogDescription>
+            Assign a homeroom teacher and any co-teachers, subject teachers, or assistants for this
+            class.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1 pb-2">
+          <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Class</p>
+          <p className="text-foreground text-base font-semibold">{classHeading}</p>
+        </div>
+
+        <form
+          className="space-y-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitForm(e.currentTarget);
+          }}
         >
-          Edit teachers
-        </Button>
-      </span>
+          <input type="hidden" name="classId" value={klass.id} />
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit teachers</DialogTitle>
-            <DialogDescription>
-              Homeroom and supporting teachers are stored in{" "}
-              <code className="text-foreground rounded bg-muted px-1 py-0.5 text-xs">class_teachers</code>{" "}
-              (one row per teacher per class).
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-1 pb-2">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Class</p>
-            <p className="text-foreground text-base font-semibold">{classHeading}</p>
+          <div className="space-y-2">
+            <Label htmlFor={`hr-${klass.id}`}>Homeroom teacher</Label>
+            <select
+              id={`hr-${klass.id}`}
+              name="homeroomTeacherProfileId"
+              value={homeroomSelectValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                setHomeroomId(v === "__none__" ? "" : v);
+              }}
+              disabled={pending || teachers.length === 0}
+              className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="__none__">Unassigned</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <form
-            className="space-y-6"
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitForm(e.currentTarget);
-            }}
-          >
-            <input type="hidden" name="classId" value={klass.id} />
-
-            <div className="space-y-2">
-              <Label htmlFor={`hr-${klass.id}`}>Homeroom teacher</Label>
-              <select
-                id={`hr-${klass.id}`}
-                name="homeroomTeacherProfileId"
-                value={homeroomSelectValue}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setHomeroomId(v === "__none__" ? "" : v);
-                }}
-                disabled={pending || teachers.length === 0}
-                className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Additional teachers</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => setLines((prev) => [...prev, newLine()])}
               >
-                <option value="__none__">Unassigned</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+                Add teacher
+              </Button>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Additional teachers</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => setLines((prev) => [...prev, newLine()])}
-                >
-                  Add teacher
-                </Button>
-              </div>
-
-              {lines.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No additional teachers. Use Add teacher to include co-teachers, subject teachers, and
-                  assistants.
-                </p>
-              ) : (
-                <ScrollArea className="max-h-60 pr-3">
-                  <ul className="space-y-4">
-                    {lines.map((line) => (
-                      <li
-                        key={line.key}
-                        className="border-muted/80 bg-muted/20 space-y-2 rounded-md border p-3"
-                      >
-                        <div className="flex flex-wrap items-end justify-between gap-2">
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <Label className="text-xs">Teacher</Label>
-                            <select
-                              value={line.teacherProfileId}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setLines((prev) =>
-                                  prev.map((l) =>
-                                    l.key === line.key ? { ...l, teacherProfileId: v } : l,
-                                  ),
-                                );
-                              }}
-                              disabled={pending}
-                              className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
-                            >
-                              <option value="">Select teacher…</option>
-                              {optionsForRow(line.key).map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="shrink-0 text-destructive hover:text-destructive"
-                            disabled={pending}
-                            onClick={() =>
-                              setLines((prev) => prev.filter((l) => l.key !== line.key))
-                            }
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs">Role type</Label>
+            {lines.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                No additional teachers. Use Add teacher to include co-teachers, subject teachers, and
+                assistants.
+              </p>
+            ) : (
+              <ScrollArea className="max-h-60 pr-3">
+                <ul className="space-y-4">
+                  {lines.map((line) => (
+                    <li
+                      key={line.key}
+                      className="border-muted/80 bg-muted/20 space-y-2 rounded-md border p-3"
+                    >
+                      <div className="flex flex-wrap items-end justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <Label className="text-xs">Teacher</Label>
                           <select
-                            value={line.uiRole}
+                            value={line.teacherProfileId}
                             onChange={(e) => {
-                              const v = e.target.value as ClassTeacherUiExtraRole;
-                              if (!(CLASS_TEACHER_UI_EXTRA_ROLE_KEYS as readonly string[]).includes(v)) {
-                                return;
-                              }
+                              const v = e.target.value;
                               setLines((prev) =>
-                                prev.map((l) => (l.key === line.key ? { ...l, uiRole: v } : l)),
+                                prev.map((l) =>
+                                  l.key === line.key ? { ...l, teacherProfileId: v } : l,
+                                ),
                               );
                             }}
                             disabled={pending}
                             className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
                           >
-                            {CLASS_TEACHER_UI_EXTRA_ROLE_KEYS.map((k) => (
-                              <option key={k} value={k}>
-                                {CLASS_TEACHER_UI_EXTRA_ROLE_LABELS[k]}
+                            <option value="">Select teacher…</option>
+                            {optionsForRow(line.key).map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label}
                               </option>
                             ))}
                           </select>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
-              )}
-            </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0 text-destructive hover:text-destructive"
+                          disabled={pending}
+                          onClick={() =>
+                            setLines((prev) => prev.filter((l) => l.key !== line.key))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Role type</Label>
+                        <select
+                          value={line.uiRole}
+                          onChange={(e) => {
+                            const v = e.target.value as ClassTeacherUiExtraRole;
+                            if (!(CLASS_TEACHER_UI_EXTRA_ROLE_KEYS as readonly string[]).includes(v)) {
+                              return;
+                            }
+                            setLines((prev) =>
+                              prev.map((l) => (l.key === line.key ? { ...l, uiRole: v } : l)),
+                            );
+                          }}
+                          disabled={pending}
+                          className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+                        >
+                          {CLASS_TEACHER_UI_EXTRA_ROLE_KEYS.map((k) => (
+                            <option key={k} value={k}>
+                              {CLASS_TEACHER_UI_EXTRA_ROLE_LABELS[k]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </ScrollArea>
+            )}
+          </div>
 
-            {clientError ? (
-              <p className="text-destructive text-sm" role="alert">
-                {clientError}
-              </p>
-            ) : null}
-            {serverError ? (
-              <p className="text-destructive text-sm" role="alert">
-                {serverError}
-              </p>
-            ) : null}
+          {clientError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {clientError}
+            </p>
+          ) : null}
+          {serverError ? (
+            <p className="text-destructive text-sm" role="alert">
+              {serverError}
+            </p>
+          ) : null}
 
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={pending || teachers.length === 0}>
-                {pending ? "Saving…" : "Save"}
-              </Button>
-            </DialogFooter>
-          </form>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={pending}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending || teachers.length === 0}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </form>
 
-          <WorkspaceToast toast={toast} />
-        </DialogContent>
-      </Dialog>
-    </>
+        <WorkspaceToast toast={toast} />
+      </DialogContent>
+    </Dialog>
   );
 }

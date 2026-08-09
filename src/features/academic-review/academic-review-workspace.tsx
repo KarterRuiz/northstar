@@ -526,17 +526,11 @@ export function AcademicReviewWorkspace({
         )}
       </section>
 
-      <p className="text-muted-foreground text-xs leading-relaxed">
-        <strong className="text-foreground">Definitions:</strong> A transition note is{" "}
-        <em>missing</em> when there is no row in{" "}
-        <code className="text-foreground rounded bg-muted px-1 py-0.5">transition_notes</code>{" "}
-        for this student with{" "}
-        <code className="text-foreground rounded bg-muted px-1 py-0.5">school_year_id</code> set to
-        the current year. <em>Draft</em> and <em>submitted</em> match{" "}
-        <code className="text-foreground rounded bg-muted px-1 py-0.5">status</code>. Homeroom
-        teacher is the <code className="text-foreground rounded bg-muted px-1 py-0.5">homeroom</code>{" "}
-        assignment when present; otherwise the first teacher on the class. Staff labels use
-        profile ids (no separate name column in schema). RLS applies to all queries.
+      <p className="ns-muted text-xs">
+        <strong className="text-foreground font-medium">How to read this list:</strong>{" "}
+        A note is <em>missing</em> when the student has no transition note for the current
+        school year. <em>Draft</em> and <em>submitted</em> reflect the note&apos;s status.
+        Homeroom teacher is shown when assigned; otherwise the first teacher on the class.
       </p>
     </div>
   );

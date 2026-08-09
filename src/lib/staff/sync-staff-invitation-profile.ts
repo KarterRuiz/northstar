@@ -4,12 +4,11 @@ import { cache } from "react";
 
 import { isRole } from "@/config/roles";
 import { recordAuditEvent } from "@/lib/audit";
+import { applyStaffInvitationAccess } from "@/lib/staff/apply-staff-invitation-access";
 import { profileFieldsFromStaffInvitation } from "@/lib/staff/profile-fields-from-invitation";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-const PENDING_INVITE_TEACHER_CLASS_ROLE = "co_teacher" as const;
 
 function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase();
@@ -17,12 +16,10 @@ function normalizeEmail(raw: string): string {
 
 /**
  * When a signed-in user's email matches a pending `staff_invitations` row, upserts `profiles.role`
- * from the invite and marks the invitation accepted. Idempotent: repeats are no-ops once the
- * invite is no longer pending. Uses the service role for `profiles` / `staff_invitations` writes
- * because the sync runs before the session reliably satisfies broad staff-manager RLS. The caller's
- * identity is taken from the session via `auth.getUser()` only.
+ * from the invite, applies grade/class access from the linked staff_member (or pending_* arrays),
+ * links staff_members.profile_id, and marks the invitation accepted.
  *
- * Deduped per request with `cache()` so layouts and actions in the same render do not multiply work.
+ * Deduped per request with `cache()`.
  */
 export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> => {
   if (!isSupabaseConfigured()) return;
@@ -51,10 +48,12 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
   const { data: invite, error: inviteError } = await admin
     .from("staff_invitations")
     .select(
-      "id, role, email, full_name, first_name, last_name, status, pending_class_ids, expires_at",
+      "id, role, email, full_name, first_name, last_name, status, pending_class_ids, pending_grade_level_ids, expires_at, updated_at, staff_member_id",
     )
     .eq("email", email)
     .eq("status", "pending")
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (inviteError || !invite?.id || !isRole(invite.role)) return;
@@ -66,10 +65,23 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
     }
   }
 
-  const { full_name, email: profileEmail } = profileFieldsFromStaffInvitation(
-    invite,
-    user.email,
-  );
+  const { data: existingProfile } = await admin
+    .from("profiles")
+    .select("id, full_name, email")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const inviteFields = profileFieldsFromStaffInvitation(invite, user.email);
+  const full_name =
+    existingProfile?.full_name?.trim() ||
+    inviteFields.full_name?.trim() ||
+    email;
+  const profileEmail =
+    (existingProfile?.email?.trim()
+      ? normalizeEmail(existingProfile.email)
+      : inviteFields.email?.trim()
+        ? normalizeEmail(inviteFields.email)
+        : email) || email;
 
   const { error: upsertError } = await admin.from("profiles").upsert(
     {
@@ -77,6 +89,7 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
       role: invite.role,
       full_name,
       email: profileEmail,
+      is_active: true,
     },
     { onConflict: "id" },
   );
@@ -87,19 +100,72 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
     return;
   }
 
-  if (invite.role === "teacher" && Array.isArray(invite.pending_class_ids)) {
-    for (const classId of invite.pending_class_ids) {
-      if (typeof classId !== "string") continue;
-      const { error: ctError } = await admin.from("class_teachers").insert({
-        class_id: classId,
-        teacher_profile_id: user.id,
-        role: PENDING_INVITE_TEACHER_CLASS_ROLE,
-      });
-      if (ctError && ctError.code !== "23505" && process.env.NODE_ENV === "development") {
-        console.warn("[staff-invite] class_teachers insert:", ctError.message);
-      }
+  // Prefer roster junction tables; fall back to invitation pending_* for legacy rows.
+  let pendingClassIds = invite.pending_class_ids ?? [];
+  let pendingGradeLevelIds = invite.pending_grade_level_ids ?? [];
+
+  if (invite.staff_member_id) {
+    const [{ data: gradeRows }, { data: classRows }] = await Promise.all([
+      admin
+        .from("staff_member_grade_levels")
+        .select("grade_level_id")
+        .eq("staff_member_id", invite.staff_member_id),
+      admin
+        .from("staff_member_classes")
+        .select("class_id")
+        .eq("staff_member_id", invite.staff_member_id),
+    ]);
+    if (gradeRows?.length) {
+      pendingGradeLevelIds = gradeRows.map((r) => r.grade_level_id);
+    }
+    if (classRows?.length) {
+      pendingClassIds = classRows.map((r) => r.class_id);
+    }
+
+    await admin
+      .from("staff_members")
+      .update({
+        profile_id: user.id,
+        status: "ready",
+        last_activity_at: new Date().toISOString(),
+        full_name,
+        email: profileEmail,
+        role: invite.role,
+        ...(invite.first_name?.trim() ? { first_name: invite.first_name.trim() } : {}),
+        ...(invite.last_name?.trim() ? { last_name: invite.last_name.trim() } : {}),
+      })
+      .eq("id", invite.staff_member_id);
+  } else {
+    // Legacy invite without roster link: attach or create staff_members by email.
+    const { data: byEmail } = await admin
+      .from("staff_members")
+      .select("id")
+      .eq("email", email)
+      .is("archived_at", null)
+      .maybeSingle();
+
+    if (byEmail?.id) {
+      await admin
+        .from("staff_members")
+        .update({
+          profile_id: user.id,
+          status: "ready",
+          last_activity_at: new Date().toISOString(),
+        })
+        .eq("id", byEmail.id);
+      await admin
+        .from("staff_invitations")
+        .update({ staff_member_id: byEmail.id })
+        .eq("id", invite.id);
     }
   }
+
+  await applyStaffInvitationAccess(admin, {
+    profileId: user.id,
+    role: invite.role,
+    pendingClassIds,
+    pendingGradeLevelIds,
+  });
 
   const nowIso = new Date().toISOString();
   const { data: updated, error: updateInviteError } = await admin
@@ -109,6 +175,7 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
       accepted_user_id: user.id,
       accepted_at: nowIso,
       pending_class_ids: [],
+      pending_grade_level_ids: [],
     })
     .eq("id", invite.id)
     .eq("status", "pending")
@@ -126,6 +193,21 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
       invitationId: invite.id,
       role: invite.role,
       email,
+      staffMemberId: invite.staff_member_id,
     },
   });
 });
+
+/** Touch last_activity_at for linked roster rows on successful sign-in. */
+export async function touchStaffMemberActivity(profileId: string): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  try {
+    const admin = createAdminSupabaseClient();
+    await admin
+      .from("staff_members")
+      .update({ last_activity_at: new Date().toISOString() })
+      .eq("profile_id", profileId);
+  } catch {
+    // Non-fatal.
+  }
+}

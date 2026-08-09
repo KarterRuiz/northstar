@@ -20,6 +20,7 @@ export const auditActions = [
   "student_updated",
   "teacher_student_created",
   "teacher_roster_bulk_created",
+  "roster_imported",
   "teacher_student_updated",
   "transition_note_edited",
   "transition_note_drafted",
@@ -44,15 +45,27 @@ export const auditActions = [
   "records_exported",
   "grade_changed",
   "class_created",
+  "class_updated",
   "class_archived",
   "class_restored",
   "class_deleted",
+  "grade_level_created",
+  "grade_level_updated",
+  "grade_level_archived",
+  "grade_level_restored",
+  "grade_level_deleted",
   "teacher_assigned",
   "role_updated",
   "profile_status_changed",
+  "staff_profile_updated",
+  "staff_profile_deleted",
   "staff_invited",
   "staff_invite_accepted",
   "staff_profile_linked",
+  "staff_grade_access_updated",
+  "staff_profile_viewed",
+  "staff_attendance_recorded",
+  "staff_attendance_corrected",
   "parent_request_created",
   "parent_request_updated",
   "parent_request_completed",
@@ -108,6 +121,19 @@ export type AuditEventInput =
         createdCount: number;
         failedCount: number;
         studentIds?: string[];
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "roster_imported";
+      metadata: {
+        added: number;
+        updated: number;
+        archived: number;
+        errorCount: number;
+        totalRows: number;
+        gradesCreated?: number;
+        classesCreated?: number;
+        schoolYearId?: string | null;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
@@ -299,6 +325,15 @@ export type AuditEventInput =
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
+      action: "class_updated";
+      metadata: {
+        classId: string;
+        schoolYearId: string;
+        gradeLevelId: string;
+        className: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
       action: "class_archived";
       metadata: {
         classId: string;
@@ -320,6 +355,44 @@ export type AuditEventInput =
         classId: string;
         schoolYearId: string;
         className: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "grade_level_created";
+      metadata: {
+        name: string;
+        sortOrder: number;
+        code: string | null;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "grade_level_updated";
+      metadata: {
+        gradeLevelId: string;
+        name: string;
+        sortOrder: number;
+        code: string | null;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "grade_level_archived";
+      metadata: {
+        gradeLevelId: string;
+        name: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "grade_level_restored";
+      metadata: {
+        gradeLevelId: string;
+        name: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "grade_level_deleted";
+      metadata: {
+        gradeLevelId: string;
+        name: string;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
@@ -348,6 +421,24 @@ export type AuditEventInput =
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
+      action: "staff_profile_updated";
+      metadata: {
+        targetUserId: string;
+        changedSummary: string;
+        emailChanged?: boolean;
+        emailReconfirmationRequired?: boolean;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_profile_deleted";
+      metadata: {
+        targetUserId: string;
+        email?: string;
+        fullName?: string;
+        role?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
       action: "staff_invited";
       metadata: {
         invitationId: string;
@@ -372,6 +463,35 @@ export type AuditEventInput =
         role: string;
         previousRole?: string | null;
         invitationEmail?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_grade_access_updated";
+      metadata: {
+        teacherProfileId: string;
+        gradeLevelIds: string[];
+        op: "replace" | "add" | "remove";
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_profile_viewed";
+      metadata: { staffMemberId: string } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_attendance_recorded";
+      metadata: {
+        staffMemberId: string;
+        attendanceDate: string;
+        status: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_attendance_corrected";
+      metadata: {
+        staffMemberId: string;
+        attendanceDate: string;
+        status: string;
+        previousStatus?: string;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {

@@ -17,6 +17,8 @@ export {
 } from "./supabase-profile-data";
 
 export { loadStudentIntelligence } from "./load-student-intelligence";
+export { loadStudentShellMetrics } from "./load-student-shell-metrics";
+export type { StudentShellMetrics } from "./load-student-shell-metrics";
 export type {
   StudentIntelligence,
   StudentIntelligenceResult,

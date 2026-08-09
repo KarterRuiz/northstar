@@ -5,11 +5,13 @@ export type Crumb = { label: string; href?: string };
 const segmentTitle: Record<string, string> = {
   dashboard: "Dashboard",
   students: "Students",
+  import: "Import roster",
   overview: "Overview",
   grades: "Grades",
+  academics: "Academics",
   interventions: "Interventions",
   attendance: "Attendance",
-  behavior: "Student support",
+  behavior: "Behavior",
   "student-support": "Student support",
   "academic-records": "Academic record",
   gradebook: "Gradebook",
@@ -18,6 +20,8 @@ const segmentTitle: Record<string, string> = {
   preview: "Preview",
   "transition-notes": "Transition notes",
   files: "Files",
+  documents: "Documents",
+  "parent-communication": "Parent communication",
   "audit-history": "Audit history",
   directory: "Directory",
   records: "Records",
@@ -26,10 +30,14 @@ const segmentTitle: Record<string, string> = {
   settings: "School settings",
   classes: "Classes",
   teachers: "Teachers & staff",
+  assignment: "Classes & academics",
+  observations: "Professional notes",
+  "professional-notes": "Professional notes",
+  "student-records": "Student records",
+  "files-activity": "Files & activity",
+  activity: "Activity",
   "parent-requests": "Parent requests",
   actions: "Quick actions",
-  observations: "Observations",
-  new: "New note",
   enrolment: "Enrolment",
   transcripts: "Transcripts",
   school: "School overview",
@@ -48,6 +56,7 @@ function titleize(segment: string, opts?: TitleizeOpts): string {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
     if (opts?.previousSegment === "parent-requests") return "Request";
     if (opts?.previousSegment === "students") return "Student";
+    if (opts?.previousSegment === "teachers") return "Staff";
     return "Details";
   }
   if (/^stu-/.test(segment)) {
@@ -55,6 +64,24 @@ function titleize(segment: string, opts?: TitleizeOpts): string {
   }
   if (segment === "classes" && opts?.dashboardRole === "teacher") {
     return "My classes";
+  }
+  // Staff profile: /teachers/:staffMemberId/classes
+  if (
+    segment === "classes" &&
+    opts?.previousSegment &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      opts.previousSegment,
+    )
+  ) {
+    return "Classes & academics";
+  }
+  // `/new` is reused across flows; label from the parent segment.
+  if (segment === "new") {
+    if (opts?.previousSegment === "students") return "Add student";
+    if (opts?.previousSegment === "transition-notes") return "New note";
+    if (opts?.previousSegment === "parent-requests") return "New request";
+    if (opts?.previousSegment === "academic-records") return "New record";
+    return "New";
   }
   if (segmentTitle[segment]) return segmentTitle[segment];
   if (isRole(segment)) return roleLabels[segment];
