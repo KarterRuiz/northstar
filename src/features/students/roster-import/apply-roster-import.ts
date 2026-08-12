@@ -5,6 +5,7 @@ import {
   inferSortOrderFromName,
   normalizeGradeCode,
 } from "@/features/classes/grade-level-helpers";
+import { logServerError, safeUserFacingMessage } from "@/lib/errors/safe-user-message";
 import type { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { findClassByLabel, findGradeByLabel, normalizeMatchKey } from "./match-helpers";
@@ -81,9 +82,13 @@ async function ensureGrade(
     .single();
 
   if (error || !data) {
+    if (error) logServerError("roster-import.ensureGrade", error.message);
     return {
       ok: false,
-      message: error?.message || `Could not create grade "${name}".`,
+      message: safeUserFacingMessage(
+        error?.message,
+        `Could not create grade "${name}".`,
+      ),
     };
   }
 
@@ -161,9 +166,13 @@ async function ensureClass(
     .single();
 
   if (error || !data) {
+    if (error) logServerError("roster-import.ensureClass", error.message);
     return {
       ok: false,
-      message: error?.message || `Could not create class "${classLabel}".`,
+      message: safeUserFacingMessage(
+        error?.message,
+        `Could not create class "${classLabel}".`,
+      ),
     };
   }
 
@@ -295,10 +304,11 @@ export async function applyPlannedRow(
       .eq("id", row.existingStudentId);
 
     if (updErr) {
+      logServerError("roster-import.applyPlannedRow.updateStudent", updErr.message);
       const msg =
         updErr.message.includes("students_external_id_unique") || updErr.code === "23505"
           ? "That student number is already used by another student."
-          : updErr.message;
+          : safeUserFacingMessage(updErr.message, "Could not update this student.");
       return { ok: false, message: msg };
     }
 
@@ -312,7 +322,16 @@ export async function applyPlannedRow(
         })
         .eq("id", row.existingEnrollmentId);
 
-      if (enErr) return { ok: false, message: enErr.message };
+      if (enErr) {
+        logServerError("roster-import.applyPlannedRow.updateEnrollment", enErr.message);
+        return {
+          ok: false,
+          message: safeUserFacingMessage(
+            enErr.message,
+            "Could not update this student's class enrollment.",
+          ),
+        };
+      }
     } else {
       const { error: enErr } = await supabase.from("student_enrollments").insert({
         student_id: row.existingStudentId,
@@ -320,7 +339,16 @@ export async function applyPlannedRow(
         school_year_id: row.schoolYearId,
         status: "active",
       });
-      if (enErr) return { ok: false, message: enErr.message };
+      if (enErr) {
+        logServerError("roster-import.applyPlannedRow.insertEnrollment", enErr.message);
+        return {
+          ok: false,
+          message: safeUserFacingMessage(
+            enErr.message,
+            "Could not enroll this student in the class.",
+          ),
+        };
+      }
     }
 
     return { ok: true, action: "updated" };
@@ -342,11 +370,14 @@ export async function applyPlannedRow(
     .single();
 
   if (insertErr || !inserted?.id) {
+    if (insertErr) {
+      logServerError("roster-import.applyPlannedRow.insertStudent", insertErr.message);
+    }
     const msg =
       insertErr?.message.includes("students_external_id_unique") ||
       insertErr?.code === "23505"
         ? "That student number is already in use."
-        : insertErr?.message || "Could not create student.";
+        : safeUserFacingMessage(insertErr?.message, "Could not create student.");
     return { ok: false, message: msg };
   }
 
@@ -358,8 +389,12 @@ export async function applyPlannedRow(
   });
 
   if (enErr) {
+    logServerError("roster-import.applyPlannedRow.enrollNew", enErr.message);
     await supabase.from("students").delete().eq("id", inserted.id);
-    return { ok: false, message: enErr.message || "Could not enroll student." };
+    return {
+      ok: false,
+      message: safeUserFacingMessage(enErr.message, "Could not enroll student."),
+    };
   }
 
   return { ok: true, action: "added" };
@@ -382,9 +417,10 @@ export async function archiveLeavingStudents(
       .eq("id", row.enrollmentId);
 
     if (error) {
+      logServerError("roster-import.archiveLeavingStudents", error.message);
       errors.push({
         rowNumber: 0,
-        message: `Could not archive enrollment for student ${row.studentId}: ${error.message}`,
+        message: "Could not archive a withdrawn student's enrollment. Try again.",
       });
     } else {
       archived += 1;

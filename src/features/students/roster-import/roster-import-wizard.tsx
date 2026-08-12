@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-import { mappingCompleteness } from "./auto-map-columns";
+import { autoMapColumnsDetailed, mappingCompleteness, materializeRowsFromMatrix } from "./auto-map-columns";
+import { detectHeaderRow } from "./detect-roster-structure";
 import { ROSTER_FIELD_CATALOG, type RosterFieldId } from "./field-catalog";
 import {
   applyRosterImportBatchAction,
@@ -45,6 +46,7 @@ import {
 } from "./roster-import-actions";
 import type {
   ColumnMapping,
+  ColumnMappingOrigins,
   ParsedRosterFile,
   RosterImportOptions,
   RosterImportPlan,
@@ -54,6 +56,7 @@ import { DEFAULT_ROSTER_IMPORT_OPTIONS } from "./types";
 
 type WizardStep =
   | "upload"
+  | "sheet"
   | "mapping"
   | "validation"
   | "summary"
@@ -112,6 +115,9 @@ export function RosterImportWizard({
 
   const [fileMeta, setFileMeta] = useState<ParsedRosterFile | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping>({});
+  const [mappingOrigins, setMappingOrigins] = useState<ColumnMappingOrigins>({});
+  const [ambiguousHeaders, setAmbiguousHeaders] = useState<string[]>([]);
+  const [showHeaderPicker, setShowHeaderPicker] = useState(false);
   const [plan, setPlan] = useState<RosterImportPlan | null>(null);
   const [cataloguedNote, setCataloguedNote] = useState<string[]>([]);
   const [options, setOptions] = useState<RosterImportOptions>({
@@ -131,6 +137,7 @@ export function RosterImportWizard({
   });
   const [summary, setSummary] = useState<RosterImportSummary | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadedFileRef = useRef<File | null>(null);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
 
@@ -142,51 +149,101 @@ export function RosterImportWizard({
     );
   }, [mapping]);
 
+  const samplePreview = useMemo(() => {
+    if (!fileMeta) return [];
+    const fields = mappingFields.filter((f) => mapping[f.id]);
+    if (fields.length === 0) return [];
+    return fileMeta.rows.slice(0, 5).map((row, index) => ({
+      rowNumber: fileMeta.headerRowNumber + 1 + index,
+      cells: fields.map((f) => ({
+        fieldId: f.id,
+        label: f.label,
+        value: row[mapping[f.id]!] ?? "",
+      })),
+    }));
+  }, [fileMeta, mapping, mappingFields]);
+
+  const applyParseResult = useCallback(
+    (result: {
+      file: ParsedRosterFile;
+      suggestedMapping: ColumnMapping;
+      mappingOrigins: ColumnMappingOrigins;
+      ambiguousHeaders: string[];
+    }) => {
+      setFileMeta(result.file);
+      setMapping(result.suggestedMapping);
+      setMappingOrigins(result.mappingOrigins);
+      setAmbiguousHeaders(result.ambiguousHeaders);
+      setPlan(null);
+      setSummary(null);
+      setShowHeaderPicker(result.file.needsHeaderRowSelection);
+      if (result.file.needsSheetSelection) {
+        setStep("sheet");
+      } else {
+        setStep("mapping");
+      }
+    },
+    [],
+  );
+
   const handleFile = useCallback(
-    (file: File | null) => {
+    (file: File | null, overrides?: { sheetName?: string; headerRowIndex?: number }) => {
       if (!file) return;
       setError(null);
+      uploadedFileRef.current = file;
       const fd = new FormData();
       fd.set("file", file);
+      if (overrides?.sheetName) fd.set("sheetName", overrides.sheetName);
+      if (overrides?.headerRowIndex != null) {
+        fd.set("headerRowIndex", String(overrides.headerRowIndex));
+      }
       startTransition(async () => {
-        const result = await parseRosterUploadAction(dashboardRole, fd);
-        if (!result.ok) {
-          setError(result.message);
-          return;
+        try {
+          const result = await parseRosterUploadAction(dashboardRole, fd);
+          if (!result.ok) {
+            setError(result.message);
+            return;
+          }
+          applyParseResult(result);
+        } catch {
+          setError("Could not read that file. Check that it is a valid CSV or Excel workbook.");
         }
-        setFileMeta(result.file);
-        setMapping(result.suggestedMapping);
-        setPlan(null);
-        setSummary(null);
-        setStep("mapping");
       });
     },
-    [dashboardRole],
+    [applyParseResult, dashboardRole],
   );
 
   const downloadCsvTemplate = () => {
     startTransition(async () => {
-      const result = await getRosterTemplateCsvAction(dashboardRole);
-      if (!result.ok) {
-        setError(result.message);
-        return;
+      try {
+        const result = await getRosterTemplateCsvAction(dashboardRole);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        downloadTextFile(result.csv, result.fileName, "text/csv;charset=utf-8");
+      } catch {
+        setError("Could not download the CSV template. Try again.");
       }
-      downloadTextFile(result.csv, result.fileName, "text/csv;charset=utf-8");
     });
   };
 
   const downloadXlsxTemplate = () => {
     startTransition(async () => {
-      const result = await getRosterTemplateXlsxAction(dashboardRole);
-      if (!result.ok) {
-        setError(result.message);
-        return;
+      try {
+        const result = await getRosterTemplateXlsxAction(dashboardRole);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        downloadBase64File(
+          result.base64,
+          result.fileName,
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        );
+      } catch {
+        setError("Could not download the Excel template. Try again.");
       }
-      downloadBase64File(
-        result.base64,
-        result.fileName,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      );
     });
   };
 
@@ -194,43 +251,96 @@ export function RosterImportWizard({
     if (!fileMeta) return;
     setError(null);
     startTransition(async () => {
-      const result = await validateRosterImportAction({
-        dashboardRole,
-        rows: fileMeta.rows,
-        mapping,
-        options: nextOptions,
-      });
-      if (!result.ok) {
-        setError(result.message);
-        return;
+      try {
+        const result = await validateRosterImportAction({
+          dashboardRole,
+          rows: fileMeta.rows,
+          mapping,
+          headerRowNumber: fileMeta.headerRowNumber,
+          options: nextOptions,
+        });
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        setPlan(result.plan);
+        setCataloguedNote(result.cataloguedFieldsMapped.map((f) => f.label));
+        setStep(nextStep);
+      } catch {
+        setError("Could not validate this roster. Try again.");
       }
-      setPlan(result.plan);
-      setCataloguedNote(result.cataloguedFieldsMapped.map((f) => f.label));
-      setStep(nextStep);
     });
+  };
+
+  const chooseSheet = (sheetName: string) => {
+    const file = uploadedFileRef.current;
+    if (!file) {
+      setError("Upload the file again to choose a worksheet.");
+      setStep("upload");
+      return;
+    }
+    handleFile(file, { sheetName });
+  };
+
+  const chooseHeaderRow = (headerRowIndex: number) => {
+    if (!fileMeta) return;
+    setError(null);
+    const { headers, rows } = materializeRowsFromMatrix(fileMeta.matrix, headerRowIndex);
+    if (headers.length === 0) {
+      setError("No column headers were found on that row.");
+      return;
+    }
+    if (rows.length === 0) {
+      setError("No student rows were found under that header row.");
+      return;
+    }
+    const detection = detectHeaderRow(fileMeta.matrix);
+    const suggested = autoMapColumnsDetailed(headers);
+    applyParseResult({
+      file: {
+        ...fileMeta,
+        headers,
+        rows,
+        headerRowIndex,
+        headerRowNumber: headerRowIndex + 1,
+        headerDetectionConfidence: "high",
+        headerCandidates: detection.candidates,
+        needsHeaderRowSelection: false,
+        needsSheetSelection: false,
+      },
+      suggestedMapping: suggested.mapping,
+      mappingOrigins: suggested.origins,
+      ambiguousHeaders: suggested.ambiguousHeaders,
+    });
+    setShowHeaderPicker(false);
+    setStep("mapping");
   };
 
   const downloadErrorReport = () => {
     if (!plan) return;
     startTransition(async () => {
-      const result = await buildRosterErrorReportAction(
-        dashboardRole,
-        plan.issues.map((i) => ({
-          rowNumber: i.rowNumber,
-          severity: i.severity,
-          message: i.message,
-          field: i.field,
-        })),
-      );
-      if (!result.ok) {
-        setError(result.message);
-        return;
+      try {
+        const result = await buildRosterErrorReportAction(
+          dashboardRole,
+          plan.issues.map((i) => ({
+            rowNumber: i.rowNumber,
+            severity: i.severity,
+            message: i.message,
+            field: i.field,
+          })),
+        );
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        downloadTextFile(
+          result.csv,
+          "northstar-roster-validation-errors.csv",
+          "text/csv;charset=utf-8",
+        );
+      } catch {
+        setError("Could not build the error report. Try again.");
       }
-      downloadTextFile(
-        result.csv,
-        "northstar-roster-validation-errors.csv",
-        "text/csv;charset=utf-8",
-      );
     });
   };
 
@@ -262,54 +372,60 @@ export function RosterImportWizard({
     const errors: { rowNumber: number; message: string }[] = [];
     let bootstrap = true;
 
-    while (cursor < plannedRows.length) {
-      const batch = await applyRosterImportBatchAction({
-        dashboardRole,
-        options: importOptions,
-        plannedRows,
-        leavingStudents: freshPlan.leavingStudents,
-        cursor,
-        batchSize: 25,
-        bootstrap,
-        totalsSoFar: {
+    try {
+      while (cursor < plannedRows.length) {
+        const batch = await applyRosterImportBatchAction({
+          dashboardRole,
+          options: importOptions,
+          plannedRows,
+          leavingStudents: freshPlan.leavingStudents,
+          cursor,
+          batchSize: 25,
+          bootstrap,
+          totalsSoFar: {
+            added,
+            updated,
+            archived,
+            gradesCreated,
+            classesCreated,
+            errorCount: errors.length,
+          },
+        });
+
+        if (!batch.ok) {
+          setError(batch.message);
+          setStep("summary");
+          return;
+        }
+
+        bootstrap = false;
+        plannedRows = batch.plannedRows;
+        cursor = batch.cursor;
+        added += batch.added;
+        updated += batch.updated;
+        archived += batch.archived;
+        gradesCreated += batch.gradesCreated;
+        classesCreated += batch.classesCreated;
+        errors.push(...batch.errors);
+
+        setProgress({
+          processed: batch.processed,
+          total: plannedRows.length,
+          remaining: batch.remaining,
           added,
           updated,
           archived,
           gradesCreated,
           classesCreated,
-          errorCount: errors.length,
-        },
-      });
+          errors: [...errors],
+        });
 
-      if (!batch.ok) {
-        setError(batch.message);
-        setStep("summary");
-        return;
+        if (batch.done) break;
       }
-
-      bootstrap = false;
-      plannedRows = batch.plannedRows;
-      cursor = batch.cursor;
-      added += batch.added;
-      updated += batch.updated;
-      archived += batch.archived;
-      gradesCreated += batch.gradesCreated;
-      classesCreated += batch.classesCreated;
-      errors.push(...batch.errors);
-
-      setProgress({
-        processed: batch.processed,
-        total: plannedRows.length,
-        remaining: batch.remaining,
-        added,
-        updated,
-        archived,
-        gradesCreated,
-        classesCreated,
-        errors: [...errors],
-      });
-
-      if (batch.done) break;
+    } catch {
+      setError("Import stopped unexpectedly. Review the progress below and try again.");
+      setStep("summary");
+      return;
     }
 
     setSummary({
@@ -326,49 +442,58 @@ export function RosterImportWizard({
   const startImport = () => {
     if (!fileMeta) return;
     startTransition(async () => {
-      const result = await validateRosterImportAction({
-        dashboardRole,
-        rows: fileMeta.rows,
-        mapping,
-        options,
-      });
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      setPlan(result.plan);
-      setCataloguedNote(result.cataloguedFieldsMapped.map((f) => f.label));
+      try {
+        const result = await validateRosterImportAction({
+          dashboardRole,
+          rows: fileMeta.rows,
+          mapping,
+          headerRowNumber: fileMeta.headerRowNumber,
+          options,
+        });
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        setPlan(result.plan);
+        setCataloguedNote(result.cataloguedFieldsMapped.map((f) => f.label));
 
-      if (result.plan.blockingErrorCount > 0) {
-        setError(
-          "There are still blocking errors. Fix the file, or enable auto-create for missing grades/classes and re-check.",
-        );
-        setStep("validation");
-        return;
-      }
+        if (result.plan.blockingErrorCount > 0) {
+          setError(
+            "There are still blocking errors. Fix the file, or enable auto-create for missing grades/classes and re-check.",
+          );
+          setStep("validation");
+          return;
+        }
 
-      if (!options.createNew && !options.updateExisting && !options.archiveWithdrawn) {
-        setError("Choose at least one import action: create, update, or archive.");
-        return;
-      }
+        if (!options.createNew && !options.updateExisting && !options.archiveWithdrawn) {
+          setError("Choose at least one import action: create, update, or archive.");
+          return;
+        }
 
-      await executeImport(result.plan, options);
+        await executeImport(result.plan, options);
+      } catch {
+        setError("Could not start the import. Try again.");
+      }
     });
   };
 
   const downloadImportReport = () => {
     if (!summary) return;
     startTransition(async () => {
-      const result = await buildRosterImportReportAction(dashboardRole, summary);
-      if (!result.ok) {
-        setError(result.message);
-        return;
+      try {
+        const result = await buildRosterImportReportAction(dashboardRole, summary);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        downloadTextFile(
+          result.csv,
+          "northstar-roster-import-report.csv",
+          "text/csv;charset=utf-8",
+        );
+      } catch {
+        setError("Could not build the import report. Try again.");
       }
-      downloadTextFile(
-        result.csv,
-        "northstar-roster-import-report.csv",
-        "text/csv;charset=utf-8",
-      );
     });
   };
 
@@ -377,6 +502,34 @@ export function RosterImportWizard({
       ...prev,
       [fieldId]: header === "" ? null : header,
     }));
+    setMappingOrigins((prev) => {
+      const next = { ...prev };
+      if (header === "") {
+        delete next[fieldId];
+      } else {
+        next[fieldId] = "manual";
+      }
+      return next;
+    });
+  };
+
+  const mappingBadge = (fieldId: RosterFieldId, required: boolean) => {
+    const header = mapping[fieldId];
+    if (!header) {
+      return {
+        label: required ? "Required · Not mapped" : "Optional · Not mapped",
+        className: required
+          ? "bg-amber-500/15 text-amber-900 dark:text-amber-100"
+          : undefined,
+      };
+    }
+    if (mappingOrigins[fieldId] === "auto") {
+      return { label: "Auto-matched", className: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200" };
+    }
+    if (mappingOrigins[fieldId] === "manual") {
+      return { label: "Manually mapped", className: undefined };
+    }
+    return { label: "Mapped", className: undefined };
   };
 
   const canProceedFromMapping = mappingStatus.missingRequired.length === 0;
@@ -517,17 +670,126 @@ export function RosterImportWizard({
         </Card>
       ) : null}
 
+      {step === "sheet" && fileMeta ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Which worksheet has the roster?</CardTitle>
+            <CardDescription>
+              This workbook has more than one sheet, and it isn’t clear which one is the
+              student list. Pick the sheet to continue.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {fileMeta.availableSheets.map((sheet) => (
+              <button
+                key={sheet.name}
+                type="button"
+                disabled={pending}
+                onClick={() => chooseSheet(sheet.name)}
+                className="hover:bg-muted/60 flex w-full flex-col items-start gap-1 rounded-lg border px-4 py-3 text-left transition-colors"
+              >
+                <span className="font-medium">{sheet.name}</span>
+                <span className="text-muted-foreground text-xs">
+                  ~{sheet.rowCount} data rows · {sheet.preview}
+                </span>
+              </button>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setFileMeta(null);
+                setMapping({});
+                setMappingOrigins({});
+                setStep("upload");
+              }}
+            >
+              Back
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {step === "mapping" && fileMeta ? (
         <Card>
           <CardHeader>
             <CardTitle>Map columns</CardTitle>
             <CardDescription>
-              We matched common headers from{" "}
-              <span className="font-medium">{fileMeta.fileName}</span> ({fileMeta.rows.length}{" "}
-              students). Adjust any that look wrong before validating.
+              Matched common headers from{" "}
+              <span className="font-medium">{fileMeta.fileName}</span>
+              {fileMeta.sheetName ? (
+                <>
+                  {" "}
+                  · sheet <span className="font-medium">{fileMeta.sheetName}</span>
+                </>
+              ) : null}{" "}
+              ({fileMeta.rows.length} students). Adjust anything that looks wrong before
+              validating.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+              <span>
+                Header row detected:{" "}
+                <span className="font-medium">Row {fileMeta.headerRowNumber}</span>
+                {fileMeta.headerDetectionConfidence !== "high" ? (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {fileMeta.headerDetectionConfidence} confidence
+                  </span>
+                ) : null}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2"
+                disabled={pending}
+                onClick={() => setShowHeaderPicker((v) => !v)}
+              >
+                Change
+              </Button>
+            </div>
+
+            {showHeaderPicker || fileMeta.needsHeaderRowSelection ? (
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-sm font-medium">
+                  Which row contains your column headings?
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Choose the row with labels like First Name, Class, Student ID — not the
+                  school title or year.
+                </p>
+                <div className="max-h-56 space-y-2 overflow-y-auto">
+                  {fileMeta.headerCandidates.map((candidate) => (
+                    <button
+                      key={candidate.rowIndex}
+                      type="button"
+                      disabled={pending}
+                      onClick={() => chooseHeaderRow(candidate.rowIndex)}
+                      className={cn(
+                        "hover:bg-muted/60 flex w-full flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left text-sm",
+                        candidate.rowIndex === fileMeta.headerRowIndex &&
+                          "border-primary bg-primary/5",
+                      )}
+                    >
+                      <span className="font-medium">Row {candidate.rowNumber}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {candidate.preview.join(" · ") || "(empty)"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {ambiguousHeaders.length > 0 ? (
+              <p className="text-muted-foreground text-sm">
+                Left unmapped on purpose (ambiguous name columns — map First/Last
+                manually if needed): {ambiguousHeaders.join(", ")}.
+              </p>
+            ) : null}
+
             {mappingStatus.missingRequired.length > 0 ? (
               <p className="text-amber-800 dark:text-amber-200 bg-amber-500/10 rounded-lg border border-amber-500/25 px-3 py-2 text-sm">
                 Required fields still unmapped:{" "}
@@ -553,48 +815,89 @@ export function RosterImportWizard({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mappingFields.map((field) => (
-                    <TableRow key={field.id}>
-                      <TableCell>
-                        <div className="space-y-0.5">
-                          <p className="font-medium">
-                            {field.label}
-                            {field.required ? (
-                              <span className="text-destructive"> *</span>
-                            ) : null}
-                          </p>
-                          {field.description ? (
-                            <p className="text-muted-foreground text-xs">
-                              {field.description}
+                  {mappingFields.map((field) => {
+                    const badge = mappingBadge(field.id, field.required);
+                    return (
+                      <TableRow key={field.id}>
+                        <TableCell>
+                          <div className="space-y-0.5">
+                            <p className="font-medium">
+                              {field.label}
+                              {field.required ? (
+                                <span className="text-destructive"> *</span>
+                              ) : null}
                             </p>
+                            {field.description ? (
+                              <p className="text-muted-foreground text-xs">
+                                {field.description}
+                              </p>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={cn(badge.className)}
+                          >
+                            {badge.label}
+                          </Badge>
+                          {field.status === "catalogued" ? (
+                            <span className="text-muted-foreground mt-1 block text-xs">
+                              Recognized for later imports
+                            </span>
                           ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {field.status === "importable" ? "Imports now" : "Future"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="min-w-[12rem]">
-                        <select
-                          className={nativeSelectClassName}
-                          value={mapping[field.id] ?? ""}
-                          onChange={(e) => setMappedField(field.id, e.target.value)}
-                          aria-label={`Map ${field.label}`}
-                        >
-                          <option value="">— Not mapped —</option>
-                          {fileMeta.headers.map((h) => (
-                            <option key={h} value={h}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell className="min-w-[12rem]">
+                          <select
+                            className={nativeSelectClassName}
+                            value={mapping[field.id] ?? ""}
+                            onChange={(e) => setMappedField(field.id, e.target.value)}
+                            aria-label={`Map ${field.label}`}
+                          >
+                            <option value="">— Not mapped —</option>
+                            {fileMeta.headers.map((h) => (
+                              <option key={h} value={h}>
+                                {h}
+                              </option>
+                            ))}
+                          </select>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
+
+            {canProceedFromMapping && samplePreview.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Sample rows (first 5)</p>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Row</TableHead>
+                        {samplePreview[0]?.cells.map((c) => (
+                          <TableHead key={c.fieldId}>{c.label}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {samplePreview.map((row) => (
+                        <TableRow key={row.rowNumber}>
+                          <TableCell className="text-muted-foreground">
+                            {row.rowNumber}
+                          </TableCell>
+                          {row.cells.map((c) => (
+                            <TableCell key={c.fieldId}>{c.value || "—"}</TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap gap-2">
               <Button
@@ -603,6 +906,8 @@ export function RosterImportWizard({
                 onClick={() => {
                   setFileMeta(null);
                   setMapping({});
+                  setMappingOrigins({});
+                  setAmbiguousHeaders([]);
                   setPlan(null);
                   setStep("upload");
                 }}

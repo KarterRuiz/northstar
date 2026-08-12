@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordAuditEvent } from "@/lib/audit";
+import { logServerError, safeUserFacingMessage } from "@/lib/errors/safe-user-message";
 import { REPORT_CARDS_BUCKET } from "@/lib/report-cards/constants";
 import type { ReportCardFileStatus } from "@/lib/report-cards/status";
 import type { Database } from "@/types/database.types";
@@ -45,9 +46,13 @@ export async function storeReportCardPdf(
     });
 
   if (uploadError) {
+    logServerError("report-cards.storePdf.upload", uploadError.message);
     return {
       ok: false,
-      message: uploadError.message || "Upload to storage failed.",
+      message: safeUserFacingMessage(
+        uploadError.message,
+        "Could not upload the PDF. Try again.",
+      ),
     };
   }
 
@@ -67,10 +72,14 @@ export async function storeReportCardPdf(
     .single();
 
   if (insertError) {
+    logServerError("report-cards.storePdf.insert", insertError.message);
     await args.supabase.storage.from(REPORT_CARDS_BUCKET).remove([args.storagePath]);
     return {
       ok: false,
-      message: insertError.message || "Could not save file metadata.",
+      message: safeUserFacingMessage(
+        insertError.message,
+        "Could not save the report card. Try again.",
+      ),
     };
   }
 

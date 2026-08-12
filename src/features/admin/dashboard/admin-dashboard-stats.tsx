@@ -1,20 +1,19 @@
-import { AdminAttendanceOverview } from "./admin-attendance-overview";
-import { AdminOperationalSignals } from "./admin-operational-signals";
-import { AdminRecentParentRequests } from "./admin-recent-parent-requests";
-import { getAdminDashboardStats } from "./load-admin-dashboard-stats";
-
 /**
- * Metric / signal body for Admin Overview.
- * Composes operational signals, attendance, and parent-request inbox.
+ * @deprecated Prefer AdminQuickAccess + AdminSchoolPulse via loadAdminCommandCenter.
+ * Kept so residual imports keep typechecking during the Home redesign.
  */
-export async function AdminDashboardStats() {
-  const stats = await getAdminDashboardStats();
+import type { Role } from "@/config/roles";
 
+import { AdminQuickAccess } from "./admin-quick-access";
+import { AdminSchoolPulse } from "./admin-school-pulse";
+import { loadAdminCommandCenter } from "./load-admin-command-center";
+
+export async function AdminDashboardStats({ role }: { role: Role }) {
+  const data = await loadAdminCommandCenter(role);
   return (
-    <div className="space-y-8 sm:space-y-10">
-      <AdminOperationalSignals stats={stats} />
-      <AdminAttendanceOverview />
-      <AdminRecentParentRequests requests={stats.recentParentRequests} />
+    <div className="space-y-5 sm:space-y-6">
+      <AdminQuickAccess cards={data.quickAccess} />
+      <AdminSchoolPulse indicators={data.pulse} error={data.error} />
     </div>
   );
 }

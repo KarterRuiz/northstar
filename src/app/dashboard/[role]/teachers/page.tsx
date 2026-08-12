@@ -77,11 +77,12 @@ const selectClassName =
 
 const STATUS_FILTER_OPTIONS: { value: "all" | StaffRosterDisplayStatus; label: string }[] = [
   { value: "all", label: "All statuses" },
-  { value: "draft", label: "Draft / Not Invited" },
-  { value: "ready", label: "Ready" },
-  { value: "invitation_sent", label: "Invitation Sent" },
-  { value: "opened", label: "Opened" },
-  { value: "accepted", label: "Accepted" },
+  { value: "draft", label: "Draft" },
+  { value: "ready", label: "Ready to invite" },
+  { value: "invitation_sent", label: "Invited" },
+  { value: "opened", label: "Invited · opened" },
+  { value: "account_exists", label: "Setup needed" },
+  { value: "accepted", label: "Setup needed" },
   { value: "active", label: "Active" },
   { value: "disabled", label: "Disabled" },
   { value: "archived", label: "Archived" },
@@ -104,12 +105,7 @@ export default async function StaffDirectoryPage({ params, searchParams }: PageP
   ]);
   const { grades: gradeOptions, classes: classOptions } = accessOptions;
 
-  let loginBaseUrl: string;
-  try {
-    loginBaseUrl = getAuthEmailRedirectToLogin();
-  } catch {
-    loginBaseUrl = "http://localhost:3000/login";
-  }
+  const loginBaseUrl = getAuthEmailRedirectToLogin();
 
   const totalPages = Math.max(1, Math.ceil(directory.totalCount / directory.pageSize));
   const page = Math.min(directory.page, totalPages);

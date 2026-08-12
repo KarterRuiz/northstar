@@ -7,6 +7,7 @@ import {
   resolveStaffRosterDisplayStatus,
   type StaffRosterDisplayStatus,
 } from "@/lib/staff/staff-roster-status";
+import { resolveStaffAuthUsersByIds } from "@/lib/staff/resolve-staff-auth-user";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
@@ -34,6 +35,8 @@ export type StaffMemberRow = Pick<
   inviteOpenedAt: string | null;
   inviteAcceptedAt: string | null;
   inviteStatus: Database["public"]["Tables"]["staff_invitations"]["Row"]["status"] | null;
+  /** Confirmed Auth user for this email when unlinked; null when unknown / N/A. */
+  authEmailConfirmed: boolean | null;
 };
 
 /** @deprecated Prefer StaffMemberRow — kept for transitional imports. */
@@ -117,6 +120,7 @@ const DISPLAY_STATUSES: StaffRosterDisplayStatus[] = [
   "ready",
   "invitation_sent",
   "opened",
+  "account_exists",
   "accepted",
   "active",
   "disabled",
@@ -204,7 +208,7 @@ export const fetchStaffDirectoryPage = cache(
         ? supabase
             .from("staff_invitations")
             .select(
-              "id, staff_member_id, status, expires_at, opened_at, accepted_at, sent_at, invite_token, updated_at",
+              "id, staff_member_id, status, expires_at, opened_at, accepted_at, sent_at, invite_token, accepted_user_id, updated_at",
             )
             .in("staff_member_id", memberIds)
             .order("updated_at", { ascending: false })
@@ -223,6 +227,7 @@ export const fetchStaffDirectoryPage = cache(
         accepted_at: string | null;
         sent_at: string | null;
         invite_token: string;
+        accepted_user_id: string | null;
       }
     >();
     for (const inv of invitesRes.data ?? []) {
@@ -235,6 +240,7 @@ export const fetchStaffDirectoryPage = cache(
           accepted_at: inv.accepted_at,
           sent_at: inv.sent_at,
           invite_token: inv.invite_token,
+          accepted_user_id: inv.accepted_user_id,
         });
       }
     }
@@ -243,16 +249,40 @@ export const fetchStaffDirectoryPage = cache(
       (profilesRes.data ?? []).map((p) => [p.id, p.is_active] as const),
     );
 
+    // Batch Auth confirmation for unlinked roster rows that already have an Auth user id.
+    // Avoids N+1 generateLink; practical for page-sized directories (typically dozens).
+    const authLookupEntries: { staffMemberId: string; authUserId: string; email: string }[] =
+      [];
+    for (const m of allMembers) {
+      if (m.profile_id || !m.email?.trim()) continue;
+      const invite = latestInviteByMember.get(m.id);
+      const authUserId = invite?.accepted_user_id;
+      if (!authUserId) continue;
+      authLookupEntries.push({
+        staffMemberId: m.id,
+        authUserId,
+        email: m.email,
+      });
+    }
+    const authByMember = await resolveStaffAuthUsersByIds(authLookupEntries);
+
     let rows: StaffMemberRow[] = allMembers.map((m) => {
       const invite = latestInviteByMember.get(m.id) ?? null;
       const profileIsActive = m.profile_id
         ? (profileActive.get(m.profile_id) ?? null)
         : null;
+      const authResolved = authByMember.get(m.id) ?? null;
+      const authEmailConfirmed = m.profile_id
+        ? null
+        : authResolved
+          ? authResolved.confirmed
+          : null;
       const displayStatus = resolveStaffRosterDisplayStatus({
         membershipStatus: m.status,
         archivedAt: m.archived_at,
         profileId: m.profile_id,
         profileIsActive,
+        authEmailConfirmed,
         latestInvite: invite,
       });
       return {
@@ -264,6 +294,7 @@ export const fetchStaffDirectoryPage = cache(
         inviteOpenedAt: invite?.opened_at ?? null,
         inviteAcceptedAt: invite?.accepted_at ?? null,
         inviteStatus: invite?.status ?? null,
+        authEmailConfirmed,
       };
     });
 
@@ -584,13 +615,14 @@ export const fetchStaffInviteCandidates = cache(async (): Promise<StaffMemberRow
       });
       return {
         ...m,
-        profileIsActive: null,
+        profileIsActive: null as boolean | null,
         displayStatus,
         inviteToken: invite?.invite_token ?? null,
         inviteSentAt: invite?.sent_at ?? null,
         inviteOpenedAt: invite?.opened_at ?? null,
         inviteAcceptedAt: invite?.accepted_at ?? null,
         inviteStatus: invite?.status ?? null,
+        authEmailConfirmed: null as boolean | null,
       };
     })
     .filter(
@@ -598,6 +630,7 @@ export const fetchStaffInviteCandidates = cache(async (): Promise<StaffMemberRow
         r.displayStatus === "draft" ||
         r.displayStatus === "ready" ||
         r.displayStatus === "invitation_sent" ||
-        r.displayStatus === "opened",
+        r.displayStatus === "opened" ||
+        r.displayStatus === "account_exists",
     );
 });

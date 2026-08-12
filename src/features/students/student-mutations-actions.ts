@@ -9,6 +9,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 
+import { createStudentRecord } from "./create-student-record";
 import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
@@ -130,60 +131,26 @@ export async function createStudentAction(
   const cy = await fetchClassSchoolYearId(supabase, classId);
   if (!cy.ok) return cy;
 
-  const { data: inserted, error: insertStudentError } = await supabase
-    .from("students")
-    .insert({
-      first_name: first.value,
-      last_name: last.value,
-      preferred_name: preferredName,
-      external_id: externalId,
-    })
-    .select("id")
-    .single();
-
-  if (insertStudentError || !inserted?.id) {
-    const msg =
-      insertStudentError?.message.includes("students_external_id_unique") ||
-      insertStudentError?.code === "23505"
-        ? "That student number (external ID) is already in use."
-        : insertStudentError?.message || "Could not create the student.";
-    return { ok: false, message: msg };
-  }
-
-  const studentId = inserted.id;
-
-  const { error: enrollError } = await supabase.from("student_enrollments").insert({
-    student_id: studentId,
-    class_id: classId,
-    school_year_id: cy.schoolYearId,
-    status,
-  });
-
-  if (enrollError) {
-    await supabase.from("students").delete().eq("id", studentId);
-    return {
-      ok: false,
-      message: enrollError.message || "Could not create the enrollment row.",
-    };
-  }
-
-  await recordAuditEvent({
-    action: "student_created",
+  const created = await createStudentRecord(supabase, {
+    firstName: first.value,
+    lastName: last.value,
+    preferredName,
+    externalId,
+    classId,
+    schoolYearId: cy.schoolYearId,
+    enrollmentStatus: status,
     actorUserId: auth.userId,
-    metadata: {
-      studentId,
-      classId,
-      enrollmentStatus: status,
-    },
   });
+
+  if (!created.ok) return created;
 
   revalidatePath(`/dashboard/${auth.role}/students`, "page");
-  revalidatePath(`/dashboard/${auth.role}/students/${studentId}`, "layout");
+  revalidatePath(`/dashboard/${auth.role}/students/${created.studentId}`, "layout");
 
   return {
     ok: true,
     message: "Student created.",
-    studentId,
+    studentId: created.studentId,
   };
 }
 

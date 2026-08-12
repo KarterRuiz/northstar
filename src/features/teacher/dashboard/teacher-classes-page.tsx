@@ -14,6 +14,7 @@ import { siteConfig } from "@/config/site";
 import { ListEmptyState } from "@/components/workspace/list-empty-state";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import { loadTeacherWorkspaceData } from "@/features/teacher/dashboard/load-teacher-workspace-data";
+import { formatAssignmentRole } from "@/features/teacher/dashboard/teacher-home-summaries";
 import { TeacherClassesSkeleton } from "@/features/teacher/dashboard/teacher-classes-skeleton";
 
 const BASE = "/dashboard/teacher";
@@ -68,7 +69,7 @@ async function TeacherClassesBody() {
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-lg leading-snug">
                       <Link
-                        href={`${BASE}/classes/${cls.id}`}
+                        href={`${BASE}/classes/${cls.id}/overview`}
                         className="text-primary underline-offset-4 hover:underline"
                       >
                         {cls.name}
@@ -79,17 +80,16 @@ async function TeacherClassesBody() {
                     </Badge>
                   </div>
                   <CardDescription>
-                    {cls.gradeName} · {cls.schoolYearLabel}
-                    {cls.section ? ` · Section ${cls.section}` : ""}
+                    {cls.gradeName} · {formatAssignmentRole(cls.assignmentRole)}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span>
                     <span className="text-foreground font-medium">{cls.studentCount}</span>{" "}
-                    active students
+                    {cls.studentCount === 1 ? "student" : "students"}
                   </span>
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`${BASE}/classes/${cls.id}`}>View roster</Link>
+                    <Link href={`${BASE}/classes/${cls.id}/overview`}>Open class</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -106,8 +106,8 @@ export function TeacherClassesPageContent() {
     <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
-        title="My classes"
-        description="Only classes you can access. Open a class to work the roster and completion checks."
+        title="My Classes"
+        description="Choose a class to open its classroom workspace."
       />
 
       <Suspense fallback={<TeacherClassesSkeleton />}>

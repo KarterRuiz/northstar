@@ -15,6 +15,7 @@ import {
   type StaffAttendanceStatus,
 } from "@/features/staff-profile/constants";
 import { resolveStaffRosterDisplayStatus } from "@/lib/staff/staff-roster-status";
+import { resolveStaffAuthUsersByIds } from "@/lib/staff/resolve-staff-auth-user";
 import { isUuid } from "@/lib/students/uuid";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -71,7 +72,7 @@ export const loadStaffMemberProfile = cache(
       supabase
         .from("staff_invitations")
         .select(
-          "status, expires_at, opened_at, accepted_at, sent_at, invite_token, updated_at",
+          "status, expires_at, opened_at, accepted_at, sent_at, invite_token, accepted_user_id, updated_at",
         )
         .eq("staff_member_id", staffMemberId)
         .order("updated_at", { ascending: false })
@@ -89,6 +90,18 @@ export const loadStaffMemberProfile = cache(
     const invite = inviteRes.data;
     const profileIsActive = profileRes.data?.is_active ?? null;
 
+    let authEmailConfirmed: boolean | null = null;
+    if (!member.profile_id && member.email?.trim() && invite?.accepted_user_id) {
+      const authMap = await resolveStaffAuthUsersByIds([
+        {
+          staffMemberId: member.id,
+          authUserId: invite.accepted_user_id,
+          email: member.email,
+        },
+      ]);
+      authEmailConfirmed = authMap.get(member.id)?.confirmed ?? null;
+    }
+
     const row: StaffMemberRow = {
       ...member,
       profileIsActive,
@@ -97,6 +110,7 @@ export const loadStaffMemberProfile = cache(
         archivedAt: member.archived_at,
         profileId: member.profile_id,
         profileIsActive,
+        authEmailConfirmed,
         latestInvite: invite
           ? {
               status: invite.status,
@@ -111,6 +125,7 @@ export const loadStaffMemberProfile = cache(
       inviteOpenedAt: invite?.opened_at ?? null,
       inviteAcceptedAt: invite?.accepted_at ?? null,
       inviteStatus: invite?.status ?? null,
+      authEmailConfirmed,
     };
 
     return { kind: "ok", member: row };

@@ -3,10 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  canAccessFollowUp,
   canManageParentRecordRequests,
   isRole,
   type Role,
 } from "@/config/roles";
+import { ParentRequestFollowUpActions } from "@/features/follow-up/parent-request-follow-up-actions";
+import { loadOpenFollowUpForParentRequest } from "@/features/follow-up/load-follow-up-workspace";
 import { siteConfig } from "@/config/site";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +55,12 @@ export default async function ParentRequestDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  const assignees = await loadProfilesForParentRequestAssignment();
+  const [assignees, existingFollowUp] = await Promise.all([
+    loadProfilesForParentRequestAssignment(),
+    canAccessFollowUp(role)
+      ? loadOpenFollowUpForParentRequest(role, requestId)
+      : Promise.resolve(null),
+  ]);
   const profiles = assignees.ok ? assignees.profiles : [];
 
   const row = loaded.row;
@@ -75,6 +83,14 @@ export default async function ParentRequestDetailPage({ params }: PageProps) {
         }
         actions={
           <div className="flex flex-wrap gap-2">
+            {canAccessFollowUp(role) ? (
+              <ParentRequestFollowUpActions
+                parentRequestId={row.id}
+                studentId={row.student_id}
+                requesterName={row.requester_name}
+                existingDueOn={existingFollowUp?.dueOn}
+              />
+            ) : null}
             <ParentRequestStatusBadge status={row.status} />
             <Button variant="outline" asChild>
               <Link href={`/dashboard/${role}/parent-requests`}>All requests</Link>

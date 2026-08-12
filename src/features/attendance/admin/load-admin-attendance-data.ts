@@ -84,6 +84,8 @@ export type AdminAttendancePageData =
         tardiesToday: number;
         repeatedAbsenceStudents: number;
         classesNotSubmitted: number;
+        /** Distinct teachers responsible for classes still missing today's submission. */
+        teachersWithMissingAttendance: number;
         attendanceTrend: AttendanceTrendResult;
       };
       classRows: AdminClassAttendanceRow[];
@@ -404,6 +406,18 @@ export const loadAdminAttendanceData = cache(async function loadAdminAttendanceD
   const totalMarked = classRows.reduce((n, r) => n + r.markedCount, 0);
   const absencesToday = classRows.reduce((n, r) => n + r.absences, 0);
   const tardiesToday = classRows.reduce((n, r) => n + r.tardies, 0);
+  const missingClassIds = classRows
+    .filter((r) => !r.submitted && r.totalStudents > 0)
+    .map((r) => r.classId);
+  const teachersMissing = new Set<string>();
+  for (const classId of missingClassIds) {
+    const list = teachersByClass.get(classId) ?? [];
+    const homeroom = list.find((t) => t.role === "homeroom");
+    const pick = homeroom ?? list[0];
+    if (pick?.teacher_profile_id) {
+      teachersMissing.add(pick.teacher_profile_id);
+    }
+  }
   const schoolWeekTally = tallyFromRecords(
     currentWeekRecords.map((r) => ({ status: r.status })),
   );
@@ -433,7 +447,8 @@ export const loadAdminAttendanceData = cache(async function loadAdminAttendanceD
       absencesToday,
       tardiesToday,
       repeatedAbsenceStudents: followUpRows.filter((r) => r.termAbsences >= 3).length,
-      classesNotSubmitted: classRows.filter((r) => !r.submitted && r.totalStudents > 0).length,
+      classesNotSubmitted: missingClassIds.length,
+      teachersWithMissingAttendance: teachersMissing.size,
       attendanceTrend: schoolAttendanceTrend,
     },
     classRows: displayClassRows,

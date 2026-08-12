@@ -6,7 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:roster-import": "npx tsx --test src/features/students/roster-import/roster-import.intelligence.test.ts",
+    "test:bulk-add": "npx tsx --test src/features/students/bulk-add/bulk-add.test.ts",
+    "test:report-cards": "npx tsx --test src/features/report-cards/reporting-progress.test.ts",
+    "test:follow-up": "npx tsx --test src/features/follow-up/follow-up.test.ts",
+    "test:calendar": "npx tsx --test src/features/calendar/calendar.test.ts",
+    "test:teacher-home": "npx tsx --test src/features/teacher/dashboard/teacher-home-summaries.test.ts src/features/teacher/dashboard/teacher-daily-note.test.ts",
+    "test:class-workspace": "npx tsx --test src/features/teacher/class-workspace/class-workspace.test.ts src/features/teacher/class-workspace/class-roster.test.ts src/features/teacher/class-workspace/class-attendance.test.ts src/features/teacher/class-workspace/class-support.test.ts src/features/teacher/class-workspace/class-records.test.ts",
+    "test:staff-invite": "npx tsx --test src/lib/staff/staff-invite-email.test.ts",
+    "test:auth": "npx tsx --test src/lib/auth/auth-redirect.test.ts src/lib/auth/password-policy.test.ts src/lib/supabase/env.test.ts src/lib/staff/staff-invite-email.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

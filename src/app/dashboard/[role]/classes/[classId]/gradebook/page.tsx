@@ -21,5 +21,5 @@ export default async function TeacherGradebookRoute({ params }: PageProps) {
   if (role !== "teacher") notFound();
   if (!isUuid(classId)) notFound();
 
-  return <TeacherGradebookPageContent classId={classId} />;
+  return <TeacherGradebookPageContent classId={classId} embedded />;
 }

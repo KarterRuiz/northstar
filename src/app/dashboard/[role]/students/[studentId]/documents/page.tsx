@@ -34,7 +34,7 @@ export default async function StudentDocumentsPage({ params }: PageProps) {
         <ReportCardsWorkspace
           role={role}
           studentId={studentId}
-          intro="Upload report card PDFs here. Uploaded files appear in the list above once saved."
+          intro="Add or replace an official report card PDF for this student."
         />
       ) : null}
     </div>

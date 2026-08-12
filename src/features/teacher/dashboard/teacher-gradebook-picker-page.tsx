@@ -53,7 +53,7 @@ async function TeacherGradebookPickerBody() {
       {classes.length === 0 ? (
         <ListEmptyState
           title="No assigned classes"
-          description="Your account is not linked in class_teachers yet. Ask leadership to assign you under Classes."
+          description="Ask leadership to assign your classes. They will appear here once you are linked."
         />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2">
@@ -75,14 +75,14 @@ async function TeacherGradebookPickerBody() {
                     </Badge>
                   </div>
                   <CardDescription>
-                    {cls.gradeName} · {cls.schoolYearLabel}
-                    {cls.section ? ` · Section ${cls.section}` : ""}
+                    {cls.gradeName}
+                    {cls.section ? ` · ${cls.section}` : ""}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span>
                     <span className="text-foreground font-medium">{cls.studentCount}</span>{" "}
-                    active students
+                    {cls.studentCount === 1 ? "student" : "students"}
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">

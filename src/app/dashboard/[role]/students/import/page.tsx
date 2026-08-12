@@ -46,6 +46,11 @@ export default async function ImportStudentRosterPage({ params }: PageProps) {
             <Link href={`/dashboard/${role}/students/new`}>Add single student</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
+            <Link href={`/dashboard/${role}/students/bulk-add`}>
+              Add multiple students
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
             <Link href={`/dashboard/${role}/students`}>Directory</Link>
           </Button>
         </div>

@@ -14,8 +14,11 @@ const STAFF_ACTIVITY_ACTIONS = [
   "staff_profile_updated",
   "staff_profile_deleted",
   "staff_invited",
+  "staff_invitation_resent",
   "staff_invite_accepted",
+  "staff_setup_link_sent",
   "staff_profile_linked",
+  "password_setup_completed",
   "staff_grade_access_updated",
   "staff_attendance_recorded",
   "staff_attendance_corrected",
@@ -83,10 +86,16 @@ function describeStaffActivity(action: string, metadata: Json): string {
       return "Staff member removed from roster";
     case "staff_invited":
       return "Invitation sent";
+    case "staff_invitation_resent":
+      return "Invitation resent";
     case "staff_invite_accepted":
       return "Invitation accepted";
+    case "staff_setup_link_sent":
+      return "Sign-in setup link sent";
     case "staff_profile_linked":
       return "Account linked to roster";
+    case "password_setup_completed":
+      return "Password set up";
     case "staff_grade_access_updated":
       return "Grade access updated";
     case "staff_attendance_recorded":

@@ -2,30 +2,19 @@ import "server-only";
 
 import { cache } from "react";
 
-import { loadTeacherClassPageData } from "@/features/teacher/dashboard/load-teacher-workspace-data";
-
-function classDisplayLabel(summary: {
-  name: string;
-  section: string | null;
-  gradeName: string;
-}): string {
-  const sec = summary.section?.trim();
-  const base = summary.name.trim() || "Class";
-  const klass = sec ? `${base} · ${sec}` : base;
-  return `${summary.gradeName} · ${klass}`;
-}
+import { loadTeacherClassContext } from "@/features/teacher/class-workspace/load-teacher-class-context";
 
 export const loadTeacherRosterClassContext = cache(async (classId: string) => {
-  const data = await loadTeacherClassPageData(classId);
+  const data = await loadTeacherClassContext(classId);
   if (!data.ok) {
     return data;
   }
   return {
     ok: true as const,
     classId,
-    classLabel: classDisplayLabel(data.classSummary),
-    rosterHref: `/dashboard/teacher/classes/${classId}`,
-    classSummary: data.classSummary,
+    classLabel: `${data.context.gradeName} · ${data.context.title}`,
+    rosterHref: `/dashboard/teacher/classes/${classId}/students`,
+    classSummary: data.context,
   };
 });
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { isRole } from "@/config/roles";
+import { canAccessFollowUp, isRole } from "@/config/roles";
 
 type PageProps = {
   params: Promise<{ role: string }>;
@@ -18,6 +18,9 @@ type PageProps = {
 export default async function TransitionNotesIndexPage({ params }: PageProps) {
   const { role } = await params;
   if (!isRole(role)) notFound();
+  if (canAccessFollowUp(role)) {
+    redirect(`/dashboard/${role}/follow-up`);
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">

@@ -65,6 +65,7 @@ import {
 } from "@/features/admin/staff-directory/staff-members-actions";
 import {
   resendStaffMemberInvitationAction,
+  sendStaffMemberSetupLinkAction,
   type SendStaffInvitationsState,
 } from "@/features/admin/staff-directory/send-staff-invitations-actions";
 import {
@@ -73,6 +74,12 @@ import {
 } from "@/features/admin/staff-directory/staff-member-access-dialogs";
 import { STAFF_DELETE_CONFIRM_HINT } from "@/features/admin/staff-directory/constants";
 import { buildStaffInviteLink } from "@/lib/staff/staff-invite-link";
+import {
+  canResendStaffMemberInvitation,
+  canSendActiveStaffPasswordReset,
+  canSendStaffSetupLink,
+  formatInviteSentHint,
+} from "@/lib/staff/staff-invite-email";
 import {
   canSendStaffInvitation,
   staffRosterStatusKind,
@@ -100,6 +107,124 @@ type StaffDirectoryTableProps = {
 };
 
 type ConfirmKind = "deactivate" | "reactivate" | "archive" | "delete" | null;
+
+function StaffInviteStatusCell({
+  row,
+  onToast,
+}: {
+  row: StaffMemberRow;
+  onToast: (kind: "success" | "error", message: string) => void;
+}) {
+  const router = useRouter();
+  const [resendState, resendAction, resendPending] = useActionState<
+    SendStaffInvitationsState | undefined,
+    FormData
+  >(resendStaffMemberInvitationAction, undefined);
+  const [setupState, setupAction, setupPending] = useActionState<
+    SendStaffInvitationsState | undefined,
+    FormData
+  >(sendStaffMemberSetupLinkAction, undefined);
+
+  const canResend = canResendStaffMemberInvitation({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+    authEmailConfirmed: row.authEmailConfirmed,
+  });
+  const canSetup = canSendStaffSetupLink({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+    authEmailConfirmed: row.authEmailConfirmed,
+  });
+  const canActiveReset = canSendActiveStaffPasswordReset({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+  });
+  const sentHint = canResend ? formatInviteSentHint(row.inviteSentAt) : null;
+  const actionPending = resendPending || setupPending;
+  const actionState = setupState ?? resendState;
+
+  const handledAction = useRef<string | null>(null);
+  useEffect(() => {
+    if (!actionState) return;
+    const key = `${actionState.ok}:${actionState.message}`;
+    if (handledAction.current === key) return;
+    handledAction.current = key;
+    onToast(actionState.ok ? "success" : "error", actionState.message);
+    if (actionState.ok) router.refresh();
+  }, [actionState, onToast, router]);
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <StatusBadge
+        status={staffRosterStatusKind(row.displayStatus)}
+        label={staffRosterStatusLabel(row.displayStatus)}
+      />
+      {canSetup ? (
+        <form action={setupAction} className="relative z-10">
+          <input type="hidden" name="staffMemberId" value={row.id} />
+          <Button
+            type="submit"
+            variant="link"
+            size="sm"
+            className="text-primary h-auto px-0 py-0 text-xs font-medium"
+            disabled={actionPending}
+          >
+            {setupPending ? "Sending…" : "Send setup link"}
+          </Button>
+        </form>
+      ) : null}
+      {canActiveReset ? (
+        <form action={setupAction} className="relative z-10">
+          <input type="hidden" name="staffMemberId" value={row.id} />
+          <Button
+            type="submit"
+            variant="link"
+            size="sm"
+            className="text-primary h-auto px-0 py-0 text-xs font-medium"
+            disabled={actionPending}
+          >
+            {setupPending ? "Sending…" : "Send password reset"}
+          </Button>
+        </form>
+      ) : null}
+      {canResend ? (
+        <form action={resendAction} className="relative z-10">
+          <input type="hidden" name="staffMemberId" value={row.id} />
+          <Button
+            type="submit"
+            variant="link"
+            size="sm"
+            className="text-primary h-auto px-0 py-0 text-xs font-medium"
+            disabled={actionPending}
+          >
+            {resendPending ? "Resending…" : "Resend invitation"}
+          </Button>
+        </form>
+      ) : null}
+      {sentHint ? (
+        <span className="text-muted-foreground text-xs" role="status">
+          {sentHint}
+        </span>
+      ) : null}
+      {resendState?.ok && resendState.results[0]?.inviteUrl ? (
+        <CopyTextButton
+          text={resendState.results[0].inviteUrl}
+          label="Copy new link"
+          size="sm"
+        />
+      ) : null}
+    </div>
+  );
+}
 
 function formatLastActivity(iso: string | null): string {
   if (!iso) return "—";
@@ -372,13 +497,18 @@ function StaffRowActions({
     SendStaffInvitationsState | undefined,
     FormData
   >(resendStaffMemberInvitationAction, undefined);
+  const [setupState, setupAction, setupPending] = useActionState<
+    SendStaffInvitationsState | undefined,
+    FormData
+  >(sendStaffMemberSetupLinkAction, undefined);
 
   const pending =
     deactivatePending ||
     reactivatePending ||
     archivePending ||
     deletePending ||
-    resendPending;
+    resendPending ||
+    setupPending;
   const isSelf = row.profile_id === currentUserId;
   const isArchived = row.displayStatus === "archived";
   const isDisabled = row.displayStatus === "disabled";
@@ -404,13 +534,34 @@ function StaffRowActions({
     email: row.email,
     latestInvite: latestInviteForEligibility,
   });
-  const canResend =
-    !row.profile_id &&
-    !isArchived &&
-    !isDisabled &&
-    (row.displayStatus === "invitation_sent" || row.displayStatus === "opened") &&
-    hasEmail;
-  const showSendOrResend = canSendNew || canResend || (!hasEmail && !row.profile_id && !isArchived && !isDisabled);
+  const canResend = canResendStaffMemberInvitation({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+    authEmailConfirmed: row.authEmailConfirmed,
+  });
+  const canSetup = canSendStaffSetupLink({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+    authEmailConfirmed: row.authEmailConfirmed,
+  });
+  const canActiveReset = canSendActiveStaffPasswordReset({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+  });
+  const showSendOrResend =
+    canSendNew ||
+    canResend ||
+    canSetup ||
+    (!hasEmail && !row.profile_id && !isArchived && !isDisabled);
   const canCopyLink =
     Boolean(inviteUrl) &&
     (row.displayStatus === "invitation_sent" || row.displayStatus === "opened");
@@ -454,13 +605,14 @@ function StaffRowActions({
 
   const handledResend = useRef<string | null>(null);
   useEffect(() => {
-    if (!resendState) return;
-    const key = `${resendState.ok}:${resendState.message}`;
+    const state = setupState ?? resendState;
+    if (!state) return;
+    const key = `${state.ok}:${state.message}`;
     if (handledResend.current === key) return;
     handledResend.current = key;
-    onToast(resendState.ok ? "success" : "error", resendState.message);
-    if (resendState.ok) router.refresh();
-  }, [resendState, onToast, router]);
+    onToast(state.ok ? "success" : "error", state.message);
+    if (state.ok) router.refresh();
+  }, [resendState, setupState, onToast, router]);
 
   const confirmOpen: ConfirmKind =
     confirm === "deactivate" && deactivateState?.ok
@@ -527,14 +679,36 @@ function StaffRowActions({
                 }
                 const fd = new FormData();
                 fd.set("staffMemberId", row.id);
+                if (canSetup) {
+                  setupAction(fd);
+                  return;
+                }
                 resendAction(fd);
               }}
             >
               {!hasEmail
                 ? "Send invitation (add email…)"
-                : canResend
-                  ? "Resend invitation"
-                  : "Send invitation"}
+                : canSetup
+                  ? setupPending
+                    ? "Sending…"
+                    : "Send setup link"
+                  : canResend
+                    ? resendPending
+                      ? "Resending…"
+                      : "Resend invitation"
+                    : "Send invitation"}
+            </DropdownMenuItem>
+          ) : null}
+          {canActiveReset ? (
+            <DropdownMenuItem
+              disabled={pending}
+              onSelect={() => {
+                const fd = new FormData();
+                fd.set("staffMemberId", row.id);
+                setupAction(fd);
+              }}
+            >
+              {setupPending ? "Sending…" : "Send password reset"}
             </DropdownMenuItem>
           ) : null}
           {canCopyLink ? (
@@ -842,10 +1016,7 @@ export function StaffDirectoryTable({
                   {row.role === "teacher" ? formatStaffAssignedClassesSummary(assigned) : "—"}
                 </TableCell>
                 <TableCell className="relative z-[2]">
-                  <StatusBadge
-                    status={staffRosterStatusKind(row.displayStatus)}
-                    label={staffRosterStatusLabel(row.displayStatus)}
-                  />
+                  <StaffInviteStatusCell row={row} onToast={showToast} />
                 </TableCell>
                 <TableCell className="text-muted-foreground relative z-[2] text-sm">
                   {formatLastActivity(row.last_activity_at)}

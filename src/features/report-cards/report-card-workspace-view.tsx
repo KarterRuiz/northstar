@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,15 +106,7 @@ export function ReportCardWorkspaceView({
       <WorkspacePageHeader
         eyebrow={siteConfig.shortName}
         title="Report cards"
-        description="Review readiness, enter narrative comments, generate print-ready report cards, save PDFs to student records, or upload official PDFs manually."
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href={`${BASE}#report-card-upload`}>
-              <FileText className="mr-1.5 size-3.5" />
-              Upload PDFs
-            </Link>
-          </Button>
-        }
+        description="Review class readiness, enter comments, and open student reports."
       />
 
       <div className="flex flex-wrap items-end gap-4">

@@ -25,28 +25,31 @@ export async function AdminAttendanceOverview() {
   const status = attendanceSignalStatus({
     classesNotSubmitted: metrics.classesNotSubmitted,
     studentsNeedingFollowUp: metrics.studentsNeedingFollowUp,
+    hasClassesExpectingAttendance: metrics.hasClassesExpectingAttendance,
   });
 
-  const summary = isHealthy
-    ? "All attendance is complete."
-    : [
-        metrics.classesNotSubmitted > 0
-          ? `${metrics.classesNotSubmitted} ${plural(
-              metrics.classesNotSubmitted,
-              "class",
-              "classes",
-            )} missing today's submission`
-          : null,
-        metrics.studentsNeedingFollowUp > 0
-          ? `${metrics.studentsNeedingFollowUp} ${plural(
-              metrics.studentsNeedingFollowUp,
-              "student",
-              "students",
-            )} needing follow-up`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+  const summary = !metrics.hasClassesExpectingAttendance
+    ? "No classes expecting attendance yet."
+    : isHealthy
+      ? "All class attendance is complete."
+      : [
+          metrics.classesNotSubmitted > 0
+            ? `${metrics.classesNotSubmitted} ${plural(
+                metrics.classesNotSubmitted,
+                "class",
+                "classes",
+              )} missing today's submission`
+            : null,
+          metrics.studentsNeedingFollowUp > 0
+            ? `${metrics.studentsNeedingFollowUp} ${plural(
+                metrics.studentsNeedingFollowUp,
+                "student",
+                "students",
+              )} needing follow-up`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
 
   const metricsRow = [
     {

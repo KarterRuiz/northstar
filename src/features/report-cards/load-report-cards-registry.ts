@@ -1,15 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import {
-  GENERIC_INFORMATION_LOAD_ERROR,
-  logServerError,
-} from "@/lib/errors/safe-user-message";
+import { logServerError } from "@/lib/errors/safe-user-message";
 import {
   isReportCardFileStatus,
   type ReportCardFileStatus,
 } from "@/lib/report-cards/status";
 import { isUuid } from "@/lib/students/uuid";
 import type { Database } from "@/types/database.types";
+
+export const REPORT_CARD_LIBRARY_LOAD_ERROR =
+  "We couldn't load report cards right now. Try again.";
 
 export type ReportCardRegistryRow = {
   id: string;
@@ -27,13 +27,7 @@ export type ReportCardRegistryRow = {
   createdAt: string;
 };
 
-type StudentEmbed = {
-  first_name: string;
-  last_name: string;
-  external_id: string | null;
-};
-
-type ReportCardJoinRow = {
+type FileRow = {
   id: string;
   student_id: string;
   school_year: string;
@@ -43,10 +37,13 @@ type ReportCardJoinRow = {
   source: string;
   voided_at: string | null;
   void_reason: string | null;
+  uploaded_by: string | null;
   created_at: string;
-  students: StudentEmbed | StudentEmbed[] | null;
-  profiles: { full_name: string | null } | { full_name: string | null }[] | null;
 };
+
+function escapeIlikePattern(raw: string): string {
+  return raw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 
 export async function loadActiveClassesForRegistry(
   supabase: SupabaseClient<Database>,
@@ -62,7 +59,7 @@ export async function loadActiveClassesForRegistry(
       "report-cards.loadActiveClasses",
       error?.message ?? "Could not load classes.",
     );
-    return { options: [], error: GENERIC_INFORMATION_LOAD_ERROR };
+    return { options: [], error: REPORT_CARD_LIBRARY_LOAD_ERROR };
   }
 
   const options = data.map((c) => ({
@@ -94,7 +91,7 @@ export async function loadReportCardsRegistry(
 
     if (enErr) {
       logServerError("report-cards.registry.enrollments", enErr.message);
-      return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
+      return { items: [], error: REPORT_CARD_LIBRARY_LOAD_ERROR };
     }
 
     studentIdIn = [...new Set((en ?? []).map((r) => r.student_id))];
@@ -114,39 +111,42 @@ export async function loadReportCardsRegistry(
         return { items: [], error: null };
       }
     } else {
-      const token = qRaw.replace(/[%_\\]/g, " ").trim();
+      const token = escapeIlikePattern(qRaw);
       if (!token) {
         return { items: [], error: null };
       }
       const like = `%${token}%`;
-      const [{ data: s1, error: e1 }, { data: s2, error: e2 }] =
-        await Promise.all([
-          supabase.from("students").select("id").ilike("first_name", like),
-          supabase.from("students").select("id").ilike("last_name", like),
-        ]);
-      if (e1 || e2) {
+      const { data: matches, error: searchErr } = await supabase
+        .from("students")
+        .select("id")
+        .or(
+          `first_name.ilike.${like},last_name.ilike.${like},preferred_name.ilike.${like},external_id.ilike.${like}`,
+        )
+        .limit(200);
+
+      if (searchErr) {
         logServerError(
           "report-cards.registry.studentSearch",
-          e1?.message ?? e2?.message ?? "Student search failed.",
+          searchErr.message,
         );
-        return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
+        return { items: [], error: REPORT_CARD_LIBRARY_LOAD_ERROR };
       }
-      const nameSet = new Set(
-        [...(s1 ?? []), ...(s2 ?? [])].map((r) => r.id),
-      );
-      const nameIds = [...nameSet];
-      if (nameIds.length === 0) {
+      const nameSet = new Set((matches ?? []).map((r) => r.id));
+      if (nameSet.size === 0) {
         return { items: [], error: null };
       }
       studentIdIn = studentIdIn
         ? studentIdIn.filter((id) => nameSet.has(id))
-        : nameIds;
+        : [...nameSet];
       if (studentIdIn.length === 0) {
         return { items: [], error: null };
       }
     }
   }
 
+  // Do not embed profiles via uploaded_by — that column references auth.users,
+  // not public.profiles. PostgREST rejects `profiles:uploaded_by` (PGRST200)
+  // and previously failed the whole library load.
   let query = supabase
     .from("report_card_files")
     .select(
@@ -160,9 +160,8 @@ export async function loadReportCardsRegistry(
       source,
       voided_at,
       void_reason,
-      created_at,
-      students ( first_name, last_name, external_id ),
-      profiles:uploaded_by ( full_name )
+      uploaded_by,
+      created_at
     `,
     )
     .order("created_at", { ascending: false })
@@ -188,34 +187,66 @@ export async function loadReportCardsRegistry(
       "report-cards.registry.query",
       error?.message ?? "Could not load report cards.",
     );
-    return { items: [], error: GENERIC_INFORMATION_LOAD_ERROR };
+    return { items: [], error: REPORT_CARD_LIBRARY_LOAD_ERROR };
   }
 
-  const items: ReportCardRegistryRow[] = (data as unknown as ReportCardJoinRow[]).map(
-    (row) => {
-      const s = row.students;
-      const st = Array.isArray(s) ? s[0] : s;
-      const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-      const studentName = st
-        ? `${st.first_name} ${st.last_name}`.trim()
-        : "Student";
-      return {
-        id: row.id,
-        studentId: row.student_id,
-        studentName,
-        studentNumber: st?.external_id?.trim() || null,
-        schoolYear: row.school_year,
-        term: row.term,
-        title: row.title,
-        status: row.status,
-        source: row.source === "generated" ? "generated" : "uploaded",
-        voidedAt: row.voided_at,
-        voidReason: row.void_reason,
-        uploadedByName: profile?.full_name?.trim() || null,
-        createdAt: row.created_at,
-      };
-    },
+  const rows = data as FileRow[];
+  const studentIds = [...new Set(rows.map((r) => r.student_id))];
+  const uploaderIds = [
+    ...new Set(rows.map((r) => r.uploaded_by).filter((id): id is string => Boolean(id))),
+  ];
+
+  const [studentsRes, profilesRes] = await Promise.all([
+    studentIds.length > 0
+      ? supabase
+          .from("students")
+          .select("id, first_name, last_name, preferred_name, external_id")
+          .in("id", studentIds)
+      : Promise.resolve({ data: [] as const, error: null }),
+    uploaderIds.length > 0
+      ? supabase.from("profiles").select("id, full_name").in("id", uploaderIds)
+      : Promise.resolve({ data: [] as const, error: null }),
+  ]);
+
+  if (studentsRes.error) {
+    logServerError("report-cards.registry.students", studentsRes.error.message);
+    return { items: [], error: REPORT_CARD_LIBRARY_LOAD_ERROR };
+  }
+  if (profilesRes.error) {
+    logServerError("report-cards.registry.profiles", profilesRes.error.message);
+  }
+
+  const studentById = new Map(
+    (studentsRes.data ?? []).map((s) => [s.id, s]),
   );
+  const nameByUploader = new Map(
+    (profilesRes.data ?? []).map((p) => [p.id, p.full_name?.trim() || null]),
+  );
+
+  const items: ReportCardRegistryRow[] = rows.map((row) => {
+    const st = studentById.get(row.student_id);
+    const pref = st?.preferred_name?.trim();
+    const studentName = st
+      ? pref || `${st.first_name} ${st.last_name}`.trim() || "Student"
+      : "Student";
+    return {
+      id: row.id,
+      studentId: row.student_id,
+      studentName,
+      studentNumber: st?.external_id?.trim() || null,
+      schoolYear: row.school_year,
+      term: row.term,
+      title: row.title,
+      status: row.status,
+      source: row.source === "generated" ? "generated" : "uploaded",
+      voidedAt: row.voided_at,
+      voidReason: row.void_reason,
+      uploadedByName: row.uploaded_by
+        ? nameByUploader.get(row.uploaded_by) ?? null
+        : null,
+      createdAt: row.created_at,
+    };
+  });
 
   return { items, error: null };
 }

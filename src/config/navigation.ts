@@ -12,6 +12,7 @@ import {
   HeartHandshake,
   Inbox,
   LayoutDashboard,
+  ListChecks,
   NotebookPen,
   School,
   Users,
@@ -70,7 +71,7 @@ function withRole(role: Role, items: NavSeed[]): NavItem[] {
 /** Primary navigation trees per dashboard role. */
 export const navigationByRole: Record<Role, NavItem[]> = {
   admin: withRole("admin", [
-    { title: "Overview", href: "", icon: LayoutDashboard, group: "workspace" },
+    { title: "Home", href: "", icon: LayoutDashboard, group: "workspace" },
     {
       title: "Academic review",
       href: "/academic-review",
@@ -98,9 +99,9 @@ export const navigationByRole: Record<Role, NavItem[]> = {
       group: "operations",
     },
     {
-      title: "Transition notes",
-      href: "/transition-notes",
-      icon: NotebookPen,
+      title: "Follow-Up",
+      href: "/follow-up",
+      icon: ListChecks,
       group: "operations",
     },
     {
@@ -117,9 +118,9 @@ export const navigationByRole: Record<Role, NavItem[]> = {
     },
   ]),
   teacher: withRole("teacher", [
-    { title: "Overview", href: "", icon: LayoutDashboard, group: "workspace" },
+    { title: "Home", href: "", icon: LayoutDashboard, group: "workspace" },
     {
-      title: "My classes",
+      title: "My Classes",
       href: "/classes",
       icon: School,
       group: "people",
@@ -239,6 +240,12 @@ export const navigationByRole: Record<Role, NavItem[]> = {
       group: "operations",
     },
     {
+      title: "Follow-Up",
+      href: "/follow-up",
+      icon: ListChecks,
+      group: "operations",
+    },
+    {
       title: "Parent requests",
       href: "/parent-requests",
       icon: Inbox,
@@ -288,6 +295,12 @@ export const navigationByRole: Record<Role, NavItem[]> = {
       title: "Records oversight",
       href: "/records",
       icon: FileStack,
+      group: "operations",
+    },
+    {
+      title: "Follow-Up",
+      href: "/follow-up",
+      icon: ListChecks,
       group: "operations",
     },
     {

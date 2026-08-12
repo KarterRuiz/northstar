@@ -17,7 +17,7 @@ import { getProfileRole, getUser } from "@/lib/auth/session";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-import { applyColumnMapping, autoMapColumns, mappingCompleteness } from "./auto-map-columns";
+import { applyColumnMapping, autoMapColumnsDetailed, mappingCompleteness } from "./auto-map-columns";
 import {
   applyPlannedRow,
   archiveLeavingStudents,
@@ -35,6 +35,7 @@ import {
 } from "./parse-roster-file";
 import type {
   ColumnMapping,
+  ColumnMappingOrigins,
   ParsedRosterFile,
   RosterImportOptions,
   RosterImportPlan,
@@ -48,6 +49,8 @@ export type ParseRosterResult =
       ok: true;
       file: ParsedRosterFile;
       suggestedMapping: ColumnMapping;
+      mappingOrigins: ColumnMappingOrigins;
+      ambiguousHeaders: string[];
       missingRequired: RosterFieldId[];
     }
   | { ok: false; message: string };
@@ -145,17 +148,36 @@ export async function parseRosterUploadAction(
     return { ok: false, message: "Choose a CSV or Excel file to upload." };
   }
 
+  const sheetNameRaw = formData.get("sheetName");
+  const headerRowRaw = formData.get("headerRowIndex");
+  const sheetName =
+    typeof sheetNameRaw === "string" && sheetNameRaw.trim()
+      ? sheetNameRaw.trim()
+      : null;
+  const headerRowIndex =
+    typeof headerRowRaw === "string" && headerRowRaw.trim() !== ""
+      ? Number(headerRowRaw)
+      : null;
+
   const buffer = await file.arrayBuffer();
-  const parsed = parseRosterBuffer(buffer, file.name || "roster.csv");
+  const parsed = parseRosterBuffer(buffer, file.name || "roster.csv", {
+    sheetName,
+    headerRowIndex:
+      headerRowIndex != null && Number.isFinite(headerRowIndex)
+        ? headerRowIndex
+        : null,
+  });
   if (!parsed.ok) return parsed;
 
-  const suggestedMapping = autoMapColumns(parsed.data.headers);
-  const { missingRequired } = mappingCompleteness(suggestedMapping);
+  const suggested = autoMapColumnsDetailed(parsed.data.headers);
+  const { missingRequired } = mappingCompleteness(suggested.mapping);
 
   return {
     ok: true,
     file: parsed.data,
-    suggestedMapping,
+    suggestedMapping: suggested.mapping,
+    mappingOrigins: suggested.origins,
+    ambiguousHeaders: suggested.ambiguousHeaders,
     missingRequired,
   };
 }
@@ -164,6 +186,7 @@ export async function validateRosterImportAction(input: {
   dashboardRole: string;
   rows: Record<string, string>[];
   mapping: ColumnMapping;
+  headerRowNumber?: number;
   options?: Partial<RosterImportOptions>;
 }): Promise<ValidateRosterResult> {
   const auth = await authorizeRosterImport(input.dashboardRole);
@@ -188,7 +211,9 @@ export async function validateRosterImportAction(input: {
   const contextLoad = await loadRosterImportContext();
   if (!contextLoad.ok) return contextLoad;
 
-  const mapped = applyColumnMapping(input.rows, input.mapping);
+  const mapped = applyColumnMapping(input.rows, input.mapping, {
+    headerRowNumber: input.headerRowNumber ?? 1,
+  });
   const options = coerceOptions(input.options);
   const plan = buildRosterImportPlan(mapped, contextLoad.context, options);
 
@@ -362,7 +387,3 @@ export async function buildRosterImportReportAction(
   if (!auth.ok) return auth;
   return { ok: true, csv: buildImportReportCsv(summary) };
 }
-
-/** Re-export defaults for client convenience without importing server module types incorrectly. */
-export type { RosterImportOptions, RosterImportPlan, RosterImportSummary };
-export { DEFAULT_OPTIONS as defaultRosterImportOptions };

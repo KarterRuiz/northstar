@@ -48,36 +48,87 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
   {
     id: "first_name",
     label: "First Name",
-    aliases: ["first name", "firstname", "given name", "givenname", "first"],
+    aliases: [
+      "first name",
+      "firstname",
+      "first_name",
+      "given name",
+      "givenname",
+      "given_name",
+      "forename",
+      "first",
+      "名",
+      "名字",
+    ],
     required: true,
     status: "importable",
   },
   {
     id: "last_name",
     label: "Last Name",
-    aliases: ["last name", "lastname", "family name", "familyname", "surname", "last"],
+    aliases: [
+      "last name",
+      "lastname",
+      "last_name",
+      "family name",
+      "familyname",
+      "family_name",
+      "surname",
+      "last",
+      "姓",
+      "姓氏",
+    ],
     required: true,
     status: "importable",
   },
   {
     id: "preferred_name",
     label: "Preferred Name",
-    aliases: ["preferred name", "preferredname", "preferred", "nickname", "goes by"],
+    aliases: [
+      "preferred name",
+      "preferredname",
+      "preferred_name",
+      "preferred",
+      "nickname",
+      "goes by",
+      "known as",
+    ],
     required: false,
     status: "importable",
   },
   {
     id: "english_name",
     label: "English Name",
-    aliases: ["english name", "englishname", "en name", "name en"],
+    aliases: [
+      "english name",
+      "englishname",
+      "english_name",
+      "en name",
+      "name en",
+      "name (english)",
+      "english",
+      "英文名",
+      "英文名字",
+    ],
     required: false,
     status: "importable",
-    description: "Used as preferred name when preferred name is blank.",
+    description: "Used as preferred name when preferred name is blank. Not treated as first/last name.",
   },
   {
     id: "chinese_name",
     label: "Chinese Name",
-    aliases: ["chinese name", "chinesename", "cn name", "name cn", "name zh"],
+    aliases: [
+      "chinese name",
+      "chinesename",
+      "chinese_name",
+      "cn name",
+      "name cn",
+      "name zh",
+      "name (chinese)",
+      "中文名",
+      "中文姓名",
+      "中文名字",
+    ],
     required: false,
     status: "catalogued",
   },
@@ -87,11 +138,21 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
     aliases: [
       "student number",
       "studentnumber",
+      "student_number",
       "student id",
       "studentid",
+      "student_id",
+      "student-id",
       "student #",
       "stu id",
+      "stu number",
       "sis id",
+      "sisid",
+      "admission number",
+      "admission no",
+      "学号",
+      "學生編號",
+      "学生编号",
     ],
     required: false,
     status: "importable",
@@ -100,7 +161,15 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
   {
     id: "external_id",
     label: "External ID",
-    aliases: ["external id", "externalid", "ext id", "legacy id", "source id"],
+    aliases: [
+      "external id",
+      "externalid",
+      "external_id",
+      "ext id",
+      "legacy id",
+      "source id",
+      "other id",
+    ],
     required: false,
     status: "importable",
     description: "Alternate student number column; student number wins if both are mapped.",
@@ -108,7 +177,18 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
   {
     id: "grade",
     label: "Grade",
-    aliases: ["grade", "grade level", "gradelevel", "year group", "yeargroup", "year"],
+    aliases: [
+      "grade",
+      "grade level",
+      "gradelevel",
+      "grade_level",
+      "year group",
+      "yeargroup",
+      "year_group",
+      "form",
+      "年级",
+      "年級",
+    ],
     required: false,
     status: "importable",
   },
@@ -119,11 +199,22 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
       "class",
       "class name",
       "classname",
+      "class_name",
       "homeroom",
       "home room",
+      "home_room",
       "section",
       "class section",
+      "class/section",
       "cohort",
+      "form class",
+      "tutor group",
+      "reg class",
+      "registration class",
+      "班级",
+      "班級",
+      "班别",
+      "班別",
     ],
     required: true,
     status: "importable",
@@ -280,14 +371,21 @@ export function getRosterField(id: RosterFieldId): RosterFieldDefinition {
   return field;
 }
 
-/** Normalize a CSV/Excel header for alias matching. */
+/**
+ * Normalize a CSV/Excel header for alias matching.
+ * Keeps letters (including CJK), digits, and `#`. Collapses punctuation/spaces.
+ */
 export function normalizeHeaderKey(raw: string): string {
   return raw
+    .replace(/^\uFEFF/, "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\r\n\t]+/g, " ")
     .trim()
     .toLowerCase()
-    .replace(/[_./\\]+/g, " ")
+    .replace(/[_./\\\-–—]+/g, " ")
     .replace(/[#]+/g, " # ")
-    .replace(/[^a-z0-9#\s]+/g, " ")
+    .replace(/[^\p{L}\p{N}#\s]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

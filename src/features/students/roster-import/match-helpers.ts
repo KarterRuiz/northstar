@@ -8,6 +8,19 @@ export function normalizeMatchKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/** Normalize class labels so ECG1-1 / ECG1 - 1 / ecg1-1 match. */
+export function normalizeClassKey(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[·•]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, "")
+    .replace(/-+/g, "-");
+}
+
 export function resolveExternalId(values: {
   student_number?: string;
   external_id?: string;
@@ -52,18 +65,29 @@ export function findGradeByLabel(
 
 export function classMatchKeys(klass: RosterContextClass): string[] {
   const name = normalizeMatchKey(klass.name);
+  const nameCompact = normalizeClassKey(klass.name);
   const section = klass.section ? normalizeMatchKey(klass.section) : "";
+  const sectionCompact = klass.section ? normalizeClassKey(klass.section) : "";
   const grade = normalizeMatchKey(klass.gradeName);
   const keys = new Set<string>();
   keys.add(name);
+  keys.add(nameCompact);
   if (section) {
     keys.add(`${name} ${section}`);
     keys.add(`${name} · ${section}`);
     keys.add(`${name}-${section}`);
     keys.add(section);
+    keys.add(normalizeClassKey(`${klass.name}-${klass.section}`));
+    keys.add(normalizeClassKey(`${klass.name} ${klass.section}`));
+  }
+  if (sectionCompact) {
+    keys.add(sectionCompact);
+    keys.add(`${nameCompact}-${sectionCompact}`);
+    keys.add(`${nameCompact}${sectionCompact}`);
   }
   keys.add(`${grade} ${name}`);
   keys.add(`${grade} · ${name}`);
+  keys.add(normalizeClassKey(`${klass.gradeName}${klass.name}`));
   if (section) {
     keys.add(`${grade} ${name} ${section}`);
     keys.add(`${grade} · ${name} · ${section}`);
@@ -79,16 +103,18 @@ export function findClassByLabel(
 ): RosterContextClass | null {
   if (!classLabel?.trim()) return null;
   const key = normalizeMatchKey(classLabel);
+  const compactKey = normalizeClassKey(classLabel);
   const gradeKey = gradeLabel?.trim() ? normalizeMatchKey(gradeLabel) : null;
 
   const pool = classes.filter(
     (c) => c.isActive && (!schoolYearId || c.schoolYearId === schoolYearId),
   );
 
-  // Prefer exact key matches.
+  // Prefer exact key matches (spaced and compact).
   for (const c of pool) {
     const keys = classMatchKeys(c);
-    if (keys.includes(key)) {
+    const compactKeys = keys.map(normalizeClassKey);
+    if (keys.includes(key) || compactKeys.includes(compactKey)) {
       if (gradeKey) {
         const gKeys = [
           normalizeMatchKey(c.gradeName),
@@ -107,7 +133,10 @@ export function findClassByLabel(
   // Combined "Grade · Class" in the class column.
   if (!gradeKey) {
     for (const c of pool) {
-      if (classMatchKeys(c).includes(key)) return c;
+      const keys = classMatchKeys(c);
+      if (keys.includes(key) || keys.map(normalizeClassKey).includes(compactKey)) {
+        return c;
+      }
     }
   }
 

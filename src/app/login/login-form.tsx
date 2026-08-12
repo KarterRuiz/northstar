@@ -1,10 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 
 import type { SignInState } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AUTH_FORGOT_PASSWORD_PATH } from "@/lib/auth/auth-redirect";
 
 type Props = {
   action: (state: SignInState, formData: FormData) => Promise<SignInState>;
@@ -50,6 +52,14 @@ export function LoginForm({ action, initialState }: Props) {
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Signing in…" : "Sign in"}
       </Button>
+      <p className="text-center text-sm">
+        <Link
+          href={AUTH_FORGOT_PASSWORD_PATH}
+          className="text-primary underline-offset-4 hover:underline"
+        >
+          Forgot password?
+        </Link>
+      </p>
     </form>
   );
 }

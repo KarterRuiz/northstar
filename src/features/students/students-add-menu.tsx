@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, Upload, UserPlus } from "lucide-react";
+import { ChevronDown, TableProperties, Upload, UserPlus } from "lucide-react";
 
 import type { Role } from "@/config/roles";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,15 @@ export function StudentsAddMenu({ role }: StudentsAddMenuProps) {
           <Link href={`/dashboard/${role}/students/new`} className="cursor-pointer">
             <UserPlus className="size-4" aria-hidden />
             Add single student
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link
+            href={`/dashboard/${role}/students/bulk-add`}
+            className="cursor-pointer"
+          >
+            <TableProperties className="size-4" aria-hidden />
+            Add multiple students
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

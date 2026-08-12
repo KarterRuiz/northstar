@@ -22,12 +22,16 @@ import {
   staffRosterStatusLabel,
 } from "@/lib/staff/staff-roster-status";
 import type { LucideIcon } from "lucide-react";
+import { canAccessFollowUp, isRole as isAppRole } from "@/config/roles";
+import { OpenFollowUpsCard } from "@/features/follow-up/open-follow-ups-card";
+import type { FollowUpItem } from "@/features/follow-up/types";
 
 type OverviewTabProps = {
   member: StaffMemberRow;
   metrics: StaffLeadershipMetrics;
   recentActivity: StaffActivityItem[];
   viewerRole: string;
+  openFollowUps?: FollowUpItem[];
 };
 
 function formatWhen(iso: string): string {
@@ -89,6 +93,7 @@ export function StaffOverviewTab({
   metrics,
   recentActivity,
   viewerRole,
+  openFollowUps = [],
 }: OverviewTabProps) {
   const roleLabel = isRole(member.role) ? roleLabels[member.role] : member.role;
   const isTeacher = member.role === "teacher";
@@ -96,6 +101,17 @@ export function StaffOverviewTab({
 
   return (
     <div className="space-y-8">
+      {isAppRole(viewerRole) && canAccessFollowUp(viewerRole) ? (
+        <OpenFollowUpsCard
+          role={viewerRole}
+          items={openFollowUps}
+          prefill={{
+            staffMemberId: member.id,
+            staffLabel: member.full_name,
+            category: "staff",
+          }}
+        />
+      ) : null}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card variant="metric">
           <CardHeader className="pb-2">

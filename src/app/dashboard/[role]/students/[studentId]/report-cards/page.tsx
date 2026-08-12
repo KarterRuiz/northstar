@@ -26,7 +26,11 @@ export default async function StudentReportCardsPage({ params }: PageProps) {
       <h2 className="text-lg font-medium tracking-tight">Report cards</h2>
       <ReportCardsTab studentId={studentId} dashboardRole={role} />
       {canUploadReportCards(role) ? (
-        <ReportCardsWorkspace role={role} studentId={studentId} />
+        <ReportCardsWorkspace
+          role={role}
+          studentId={studentId}
+          showFileList={false}
+        />
       ) : null}
     </div>
   );

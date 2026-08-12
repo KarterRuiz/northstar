@@ -60,8 +60,11 @@ export const auditActions = [
   "staff_profile_updated",
   "staff_profile_deleted",
   "staff_invited",
+  "staff_invitation_resent",
   "staff_invite_accepted",
+  "staff_setup_link_sent",
   "staff_profile_linked",
+  "password_setup_completed",
   "staff_grade_access_updated",
   "staff_profile_viewed",
   "staff_attendance_recorded",
@@ -74,6 +77,16 @@ export const auditActions = [
   "intervention_updated",
   "intervention_resolved",
   "intervention_escalated",
+  "follow_up_created",
+  "follow_up_updated",
+  "follow_up_completed",
+  "follow_up_reopened",
+  "calendar_event_created",
+  "calendar_event_updated",
+  "calendar_event_archived",
+  "calendar_note_created",
+  "calendar_note_updated",
+  "calendar_note_deleted",
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];
@@ -448,11 +461,34 @@ export type AuditEventInput =
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
+      action: "staff_invitation_resent";
+      metadata: {
+        invitationId: string;
+        email: string;
+        fullName: string;
+        role: string;
+        staffMemberId?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
       action: "staff_invite_accepted";
       metadata: {
         invitationId: string;
         role: string;
         email: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "staff_setup_link_sent";
+      metadata: {
+        staffMemberId: string;
+        email: string;
+        authUserId: string;
+        linked?: boolean;
+        alreadyLinked?: boolean;
+        emailSent?: boolean;
+        fullName?: string;
+        role?: string;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
@@ -463,6 +499,13 @@ export type AuditEventInput =
         role: string;
         previousRole?: string | null;
         invitationEmail?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "password_setup_completed";
+      metadata: {
+        email: string;
+        authUserId: string;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {
@@ -557,5 +600,95 @@ export type AuditEventInput =
         studentId: string;
         interventionId: string;
         status: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "follow_up_created";
+      metadata: {
+        followUpId: string;
+        category?: string;
+        studentId?: string | null;
+        staffMemberId?: string | null;
+        parentRequestId?: string | null;
+        dueOn?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "follow_up_updated";
+      metadata: {
+        followUpId: string;
+        category?: string;
+        status?: string;
+        dueOn?: string;
+        parentRequestId?: string | null;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "follow_up_completed";
+      metadata: {
+        followUpId: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "follow_up_reopened";
+      metadata: {
+        followUpId: string;
+        category?: string;
+        status?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_event_created";
+      metadata: {
+        eventId: string;
+        title?: string;
+        category?: string;
+        audience?: string;
+        allDay?: boolean;
+        startsAt?: string;
+        endsAt?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_event_updated";
+      metadata: {
+        eventId: string;
+        title?: string;
+        category?: string;
+        audience?: string;
+        allDay?: boolean;
+        startsAt?: string;
+        endsAt?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_event_archived";
+      metadata: {
+        eventId: string;
+        title?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_note_created";
+      metadata: {
+        noteId: string;
+        noteDate?: string;
+        staffMemberId?: string | null;
+        studentId?: string | null;
+        classId?: string | null;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_note_updated";
+      metadata: {
+        noteId: string;
+        noteDate?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "calendar_note_deleted";
+      metadata: {
+        noteId: string;
+        noteDate?: string;
       } & Record<string, AuditMetadataPrimitive>;
     });

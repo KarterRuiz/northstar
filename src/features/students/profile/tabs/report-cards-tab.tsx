@@ -31,10 +31,9 @@ export async function ReportCardsTab({
   return (
     <Card className={CARD_CHROME}>
       <CardHeader className="space-y-1 pb-4">
-        <CardTitle className="text-base">Report card files</CardTitle>
+        <CardTitle className="text-base">Report cards</CardTitle>
         <CardDescription>
-          PDFs stored in the private <code className="text-foreground text-xs">report-cards</code>{" "}
-          bucket. Generated snapshots and uploaded PDFs are listed with source and record status.
+          Official term reports for this student. Open a PDF, or upload a replacement when needed.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

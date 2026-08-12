@@ -77,6 +77,7 @@ import { parsePointsEarned, type AssignmentInput, type CategoryInput } from "./s
 const BASE = "/dashboard/teacher";
 
 type GradebookViewProps = {
+  embedded?: boolean;
   classId: string;
   className: string;
   classSubtitle: string;
@@ -115,6 +116,7 @@ function assignmentInputFromRow(assignment: GradebookAssignmentRow): AssignmentI
 }
 
 export function GradebookView({
+  embedded = false,
   classId,
   className: classDisplayName,
   classSubtitle,
@@ -634,23 +636,33 @@ export function GradebookView({
 
   return (
     <div className="space-y-0">
-      <header className="bg-background/95 sticky top-0 z-40 -mx-4 border-b px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <header className="bg-background/95 sticky top-0 z-40 -mx-1 border-b px-1 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-0 sm:px-0">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Gradebook
-            </p>
-            <h1 className="truncate text-lg font-semibold">{classDisplayName}</h1>
-            <p className="text-muted-foreground text-xs">{classSubtitle}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-8">
-              <Link href={`${BASE}/classes/${classId}`}>Class roster</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="min-h-11 sm:min-h-8">
-              <Link href={`${BASE}/gradebook`}>All gradebooks</Link>
-            </Button>
-          </div>
+          {embedded ? (
+            <div className="min-w-0">
+              <h2 className="text-heading text-base font-semibold tracking-tight">
+                Gradebook
+              </h2>
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                Gradebook
+              </p>
+              <h1 className="truncate text-lg font-semibold">{classDisplayName}</h1>
+              <p className="text-muted-foreground text-xs">{classSubtitle}</p>
+            </div>
+          )}
+          {embedded ? null : (
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-8">
+                <Link href={`${BASE}/classes/${classId}/students`}>Students</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="min-h-11 sm:min-h-8">
+                <Link href={`${BASE}/gradebook`}>All gradebooks</Link>
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">

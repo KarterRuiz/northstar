@@ -9,10 +9,26 @@ import { loadGradebookPageData } from "./load-gradebook-data";
 
 const BASE = "/dashboard/teacher";
 
-export async function TeacherGradebookPageContent({ classId }: { classId: string }) {
+export async function TeacherGradebookPageContent({
+  classId,
+  embedded = false,
+}: {
+  classId: string;
+  embedded?: boolean;
+}) {
   const data = await loadGradebookPageData(classId);
 
   if (!data.ok) {
+    if (embedded) {
+      return (
+        <div
+          className="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border px-4 py-3 text-sm"
+          role="alert"
+        >
+          <span className="font-medium">Could not load gradebook.</span> {data.message}
+        </div>
+      );
+    }
     return (
       <div className="mx-auto w-full max-w-[100rem] space-y-6 p-4 sm:p-6 lg:p-8">
         <WorkspacePageHeader
@@ -35,19 +51,24 @@ export async function TeacherGradebookPageContent({ classId }: { classId: string
     );
   }
 
+  const view = (
+    <GradebookView
+      classId={data.classId}
+      className={data.className}
+      classSubtitle={data.classSubtitle}
+      schoolYearLabel={data.schoolYearLabel}
+      reportReadinessByStudent={data.reportReadinessByStudent}
+      categories={data.categories}
+      assignments={data.assignments}
+      scores={data.scores}
+      students={data.students}
+      embedded={embedded}
+    />
+  );
+
+  if (embedded) return view;
+
   return (
-    <div className="mx-auto w-full max-w-[100rem] p-4 sm:p-6 lg:p-8">
-      <GradebookView
-        classId={data.classId}
-        className={data.className}
-        classSubtitle={data.classSubtitle}
-        schoolYearLabel={data.schoolYearLabel}
-        reportReadinessByStudent={data.reportReadinessByStudent}
-        categories={data.categories}
-        assignments={data.assignments}
-        scores={data.scores}
-        students={data.students}
-      />
-    </div>
+    <div className="mx-auto w-full max-w-[100rem] p-4 sm:p-6 lg:p-8">{view}</div>
   );
 }

@@ -12,17 +12,17 @@ import { staffInvitationDisplayStatus } from "@/lib/staff/invitation-display-sta
 import { profileFieldsFromStaffInvitation } from "@/lib/staff/profile-fields-from-invitation";
 import { buildStaffInviteLink } from "@/lib/staff/staff-invite-link";
 import { isUuid } from "@/lib/students/uuid";
+import { messageForStaffInviteEmailFailure } from "@/lib/staff/staff-invite-email";
+import { recoverExistingStaffAuthAccess } from "@/lib/staff/recover-existing-staff-auth";
+import { resolveStaffAuthUser } from "@/lib/staff/resolve-staff-auth-user";
+import { sendStaffAuthInviteEmail } from "@/lib/staff/send-staff-auth-invite";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-import { getAuthEmailRedirectToLogin } from "@/lib/supabase/env";
+import { resolveStaffAuthUrls } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isValidEmailFormat } from "@/lib/validation/is-valid-email-format";
 
 function messageForInviteEmailFailure(rawMessage: string | undefined): string {
-  const trimmed = rawMessage?.trim() ?? "";
-  if (/invalid api key/i.test(trimmed)) {
-    return "Email could not be sent (server configuration). Copy the invite link instead.";
-  }
-  return "Invitation saved. Email could not be sent — copy the invite link to share it.";
+  return messageForStaffInviteEmailFailure(rawMessage);
 }
 
 export type StaffInvitationActionState =
@@ -97,53 +97,27 @@ function emptySuccessExtras(): Pick<
   };
 }
 
-async function resolveLoginBase(): Promise<{ ok: true; base: string } | { ok: false; message: string }> {
-  try {
-    return { ok: true, base: getAuthEmailRedirectToLogin().replace(/\/$/, "") };
-  } catch (e) {
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "Invalid site URL configuration.",
-    };
-  }
+function resolveAuthUrls() {
+  return resolveStaffAuthUrls();
 }
 
 async function trySendInviteEmail(
   email: string,
+  /** Absolute `/auth/callback?next=/auth/setup-password` (must be allowlisted in Supabase). */
   redirectTo: string,
-): Promise<{ emailSent: boolean; errorMessage?: string; authUserId?: string }> {
-  let adminClient: ReturnType<typeof createAdminSupabaseClient> | null = null;
-  try {
-    adminClient = createAdminSupabaseClient();
-  } catch (e) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[staff-invite] No admin client:", e);
-    }
-    return {
-      emailSent: false,
-      errorMessage: "Email is not configured on the server.",
-    };
-  }
-
-  const { data: inviteAuth, error: inviteError } =
-    await adminClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-    });
-
-  if (inviteError) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[staff-invite] inviteUserByEmail:", inviteError.message);
-    }
-    return { emailSent: false, errorMessage: inviteError.message };
-  }
-
-  const invitedUser = inviteAuth?.user;
-  const authUserId =
-    invitedUser?.id && normalizeEmail(invitedUser.email ?? "") === email
-      ? invitedUser.id
-      : undefined;
-
-  return { emailSent: true, authUserId };
+  opts?: { existingAuthUserId?: string | null; forResend?: boolean },
+): Promise<{
+  emailSent: boolean;
+  errorMessage?: string;
+  authUserId?: string;
+  accountExists?: boolean;
+}> {
+  return sendStaffAuthInviteEmail({
+    email,
+    redirectTo,
+    existingAuthUserId: opts?.existingAuthUserId,
+    forResend: opts?.forResend,
+  });
 }
 
 export async function createStaffInvitationAction(
@@ -206,11 +180,12 @@ export async function createStaffInvitationAction(
       ? await filterClassIdsToGrades(supabase, rawPendingClassIds, pendingGradeLevelIds)
       : [];
 
-  const loginResolved = await resolveLoginBase();
-  if (!loginResolved.ok) {
-    return { ok: false, message: loginResolved.message };
+  const urls = resolveAuthUrls();
+  if (!urls.ok) {
+    return { ok: false, message: urls.message };
   }
-  const baseLogin = loginResolved.base;
+  const redirectTo = urls.redirectTo;
+  const inviteLinkBase = urls.inviteLinkBase;
 
   // App-level guard (DB unique index also enforces one pending per email).
   const { data: existingPending, error: pendingLookupError } = await supabase
@@ -319,7 +294,7 @@ export async function createStaffInvitationAction(
     return { ok: false, message: "Invitation was not created." };
   }
 
-  const inviteUrl = buildStaffInviteLink(baseLogin, inserted.invite_token);
+  const inviteUrl = buildStaffInviteLink(inviteLinkBase, inserted.invite_token);
 
   await recordAuditEvent({
     action: "staff_invited",
@@ -329,10 +304,41 @@ export async function createStaffInvitationAction(
       email,
       fullName,
       role,
+      ...(staffMemberId ? { staffMemberId } : {}),
     },
   });
 
-  const sendResult = await trySendInviteEmail(email, baseLogin);
+  const sendResult = await trySendInviteEmail(email, redirectTo);
+
+  if (sendResult.accountExists && sendResult.authUserId && staffMemberId) {
+    const recovered = await recoverExistingStaffAuthAccess({
+      staffMemberId,
+      authUserId: sendResult.authUserId,
+      email,
+      redirectTo,
+      actorUserId: actor.userId,
+      fullName,
+      role,
+    });
+    revalidatePath(staffDirectoryPath(actor.role));
+    if (!recovered.ok) {
+      return {
+        ok: false,
+        message: recovered.message,
+      };
+    }
+    return {
+      ok: true,
+      emailSent: true,
+      message: recovered.message,
+      loginUrl: inviteLinkBase,
+      invitedEmail: email,
+      recoveryUrl: "",
+      inviteUrl: "",
+      setupSummary: "Existing account — setup link sent; staff record linked when safe.",
+    };
+  }
+
   if (sendResult.authUserId) {
     const { error: linkErr } = await supabase
       .from("staff_invitations")
@@ -367,7 +373,7 @@ export async function createStaffInvitationAction(
     message: sendResult.emailSent
       ? "Invitation sent. You can also copy the invite link as a backup."
       : messageForInviteEmailFailure(sendResult.errorMessage),
-    loginUrl: baseLogin,
+    loginUrl: inviteLinkBase,
     invitedEmail: email,
     recoveryUrl: inviteUrl,
     inviteUrl,
@@ -595,7 +601,7 @@ export async function resendStaffInvitationAction(
 
   const { data: row, error: readError } = await supabase
     .from("staff_invitations")
-    .select("id, email, status, expires_at, invite_token")
+    .select("id, email, status, expires_at, invite_token, accepted_user_id, staff_member_id, full_name, role")
     .eq("id", invitationId)
     .maybeSingle();
 
@@ -614,34 +620,135 @@ export async function resendStaffInvitationAction(
     };
   }
 
-  const loginResolved = await resolveLoginBase();
-  if (!loginResolved.ok) {
-    return { ok: false, message: loginResolved.message };
+  if (row.staff_member_id) {
+    const { data: member } = await supabase
+      .from("staff_members")
+      .select("profile_id")
+      .eq("id", row.staff_member_id)
+      .maybeSingle();
+    if (member?.profile_id) {
+      return {
+        ok: false,
+        message: "This staff member already has an active account.",
+      };
+    }
   }
 
-  const sendResult = await trySendInviteEmail(row.email, loginResolved.base);
-  const inviteUrl = buildStaffInviteLink(loginResolved.base, row.invite_token);
+  const urls = resolveAuthUrls();
+  if (!urls.ok) {
+    return { ok: false, message: urls.message };
+  }
 
-  revalidatePath(staffDirectoryPath(actor.role));
+  const inviteEmail = normalizeEmail(row.email);
+  const resolvedAuth = await resolveStaffAuthUser({
+    email: inviteEmail,
+    knownAuthUserId: row.accepted_user_id,
+  });
+
+  if (resolvedAuth?.confirmed && row.staff_member_id) {
+    const recovered = await recoverExistingStaffAuthAccess({
+      staffMemberId: row.staff_member_id,
+      authUserId: resolvedAuth.userId,
+      email: inviteEmail,
+      redirectTo: urls.redirectTo,
+      actorUserId: actor.userId,
+      fullName: row.full_name,
+      role: row.role,
+    });
+    revalidatePath(staffDirectoryPath(actor.role));
+    if (!recovered.ok) {
+      return { ok: false, message: recovered.message };
+    }
+    return {
+      ok: true,
+      emailSent: true,
+      message: recovered.message,
+      loginUrl: urls.inviteLinkBase,
+      invitedEmail: inviteEmail,
+      recoveryUrl: "",
+      inviteUrl: "",
+      setupSummary: "Existing account — setup link sent.",
+    };
+  }
+
+  if (resolvedAuth?.confirmed && !row.staff_member_id) {
+    return {
+      ok: false,
+      message:
+        "This account already exists. Link it from Advanced recovery, or attach a staff roster row first.",
+    };
+  }
+
+  const sendResult = await trySendInviteEmail(row.email, urls.redirectTo, {
+    existingAuthUserId: row.accepted_user_id,
+    forResend: true,
+  });
+  const inviteUrl = buildStaffInviteLink(urls.inviteLinkBase, row.invite_token);
+
+  if (sendResult.accountExists && sendResult.authUserId && row.staff_member_id) {
+    const recovered = await recoverExistingStaffAuthAccess({
+      staffMemberId: row.staff_member_id,
+      authUserId: sendResult.authUserId,
+      email: inviteEmail,
+      redirectTo: urls.redirectTo,
+      actorUserId: actor.userId,
+      fullName: row.full_name,
+      role: row.role,
+    });
+    revalidatePath(staffDirectoryPath(actor.role));
+    if (!recovered.ok) {
+      return { ok: false, message: recovered.message };
+    }
+    return {
+      ok: true,
+      emailSent: true,
+      message: recovered.message,
+      loginUrl: urls.inviteLinkBase,
+      invitedEmail: inviteEmail,
+      recoveryUrl: "",
+      inviteUrl: "",
+      setupSummary: "Existing account — setup link sent.",
+    };
+  }
 
   if (!sendResult.emailSent) {
     return {
-      ok: true,
-      emailSent: false,
-      message: messageForInviteEmailFailure(sendResult.errorMessage),
-      loginUrl: loginResolved.base,
-      invitedEmail: row.email,
-      recoveryUrl: inviteUrl,
-      inviteUrl,
-      setupSummary: "",
+      ok: false,
+      message:
+        sendResult.errorMessage ??
+        messageForStaffInviteEmailFailure(undefined, { forResend: true }),
     };
   }
+
+  const nowIso = new Date().toISOString();
+  await supabase
+    .from("staff_invitations")
+    .update({
+      sent_at: nowIso,
+      opened_at: null,
+      ...(sendResult.authUserId ? { accepted_user_id: sendResult.authUserId } : {}),
+    })
+    .eq("id", row.id);
+
+  await recordAuditEvent({
+    action: "staff_invitation_resent",
+    actorUserId: actor.userId,
+    metadata: {
+      invitationId: row.id,
+      email: row.email,
+      fullName: row.full_name,
+      role: row.role,
+      ...(row.staff_member_id ? { staffMemberId: row.staff_member_id } : {}),
+    },
+  });
+
+  revalidatePath(staffDirectoryPath(actor.role));
 
   return {
     ok: true,
     emailSent: true,
-    message: "Invitation email resent.",
-    loginUrl: loginResolved.base,
+    message: `Invitation resent to ${row.email}`,
+    loginUrl: urls.inviteLinkBase,
     invitedEmail: row.email,
     recoveryUrl: inviteUrl,
     inviteUrl,
@@ -689,9 +796,9 @@ export async function renewStaffInvitationAction(
     };
   }
 
-  const loginResolved = await resolveLoginBase();
-  if (!loginResolved.ok) {
-    return { ok: false, message: loginResolved.message };
+  const urls = resolveAuthUrls();
+  if (!urls.ok) {
+    return { ok: false, message: urls.message };
   }
 
   const inviteToken = randomBytes(24).toString("hex");
@@ -718,8 +825,8 @@ export async function renewStaffInvitationAction(
     return { ok: false, message: "Could not renew the invitation. Try again." };
   }
 
-  const sendResult = await trySendInviteEmail(row.email, loginResolved.base);
-  const inviteUrl = buildStaffInviteLink(loginResolved.base, inviteToken);
+  const sendResult = await trySendInviteEmail(row.email, urls.redirectTo);
+  const inviteUrl = buildStaffInviteLink(urls.inviteLinkBase, inviteToken);
 
   await recordAuditEvent({
     action: "staff_invited",
@@ -741,7 +848,7 @@ export async function renewStaffInvitationAction(
     message: sendResult.emailSent
       ? "Invitation renewed and email sent."
       : messageForInviteEmailFailure(sendResult.errorMessage),
-    loginUrl: loginResolved.base,
+    loginUrl: urls.inviteLinkBase,
     invitedEmail: row.email,
     recoveryUrl: inviteUrl,
     inviteUrl,

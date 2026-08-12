@@ -19,12 +19,15 @@ const segmentTitle: Record<string, string> = {
   workspace: "Report cards",
   preview: "Preview",
   "transition-notes": "Transition notes",
+  "follow-up": "Follow-Up",
+  calendar: "Calendar",
   files: "Files",
   documents: "Documents",
   "parent-communication": "Parent communication",
   "audit-history": "Audit history",
   directory: "Directory",
   records: "Records",
+  support: "Support",
   growth: "Growth",
   compliance: "Compliance",
   settings: "School settings",
@@ -57,13 +60,14 @@ function titleize(segment: string, opts?: TitleizeOpts): string {
     if (opts?.previousSegment === "parent-requests") return "Request";
     if (opts?.previousSegment === "students") return "Student";
     if (opts?.previousSegment === "teachers") return "Staff";
+    if (opts?.previousSegment === "classes") return "Class";
     return "Details";
   }
   if (/^stu-/.test(segment)) {
     return "Student";
   }
   if (segment === "classes" && opts?.dashboardRole === "teacher") {
-    return "My classes";
+    return "My Classes";
   }
   // Staff profile: /teachers/:staffMemberId/classes
   if (

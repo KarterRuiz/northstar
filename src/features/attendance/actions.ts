@@ -17,6 +17,8 @@ function revalidateAttendance(classId: string) {
   revalidatePath("/dashboard/teacher", "page");
   revalidatePath("/dashboard/teacher/interventions", "page");
   revalidatePath(`/dashboard/teacher/classes/${classId}`, "page");
+  revalidatePath(`/dashboard/teacher/classes/${classId}/attendance`, "page");
+  revalidatePath(`/dashboard/teacher/classes/${classId}/overview`, "page");
 }
 
 function isIsoDate(value: string): boolean {

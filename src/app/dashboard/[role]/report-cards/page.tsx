@@ -2,16 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import {
   canSearchReportCardRegistry,
   canUploadReportCards,
   isRole,
   type Role,
 } from "@/config/roles";
+import { siteConfig } from "@/config/site";
+import { ReportCardsCommandCenter } from "@/features/report-cards/report-cards-command-center";
 import { ReportCardWorkspacePageContent } from "@/features/report-cards/report-card-workspace-page";
-import { ReportCardRegistrySection } from "@/features/report-cards/report-cards-registry";
-import { ReportCardUploadForm } from "@/features/report-cards/report-card-upload-form";
+import { ReportCardUploadSheet } from "@/features/report-cards/report-card-upload-sheet";
 import { REPORT_CARD_TERMS, isReportCardTerm } from "@/lib/report-cards/constants";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/students/uuid";
 
 type PageProps = {
@@ -39,39 +42,60 @@ export default async function ReportCardsPage({
   const showRegistry = canSearchReportCardRegistry(role);
 
   if (role === "teacher") {
-    const classIdRaw = pickString(sp.classId);
-    const classId =
-      classIdRaw && isUuid(classIdRaw) ? classIdRaw : null;
+    const classIdRaw = pickString(sp.classId) ?? pickString(sp.class);
+    const classId = classIdRaw && isUuid(classIdRaw) ? classIdRaw : null;
     const termRaw = pickString(sp.term);
     const term =
       termRaw && isReportCardTerm(termRaw) ? termRaw : REPORT_CARD_TERMS[0];
 
+    const supabase = await createServerSupabaseClient();
+    const yearsRes = supabase
+      ? await supabase
+          .from("school_years")
+          .select("label")
+          .is("archived_at", null)
+          .order("starts_on", { ascending: false })
+      : { data: [] as { label: string }[] };
+    const yearOptions = (yearsRes.data ?? [])
+      .map((y) => y.label?.trim())
+      .filter((label): label is string => Boolean(label));
+
     return (
-      <>
+      <div className="space-y-0">
         <ReportCardWorkspacePageContent classId={classId} term={term} />
         {showUpload ? (
-          <section
-            id="report-card-upload"
-            className="border-border/60 mx-auto w-full max-w-[100rem] border-t px-6 pt-10 pb-8 sm:px-8"
-          >
-            <div className="mb-6 space-y-2">
-              <h2 className="text-lg font-semibold tracking-tight">Upload PDFs</h2>
-              <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                Upload official report card PDFs to the private storage bucket and manage
-                draft and final states per student.
-              </p>
+          <section className="border-border/60 mx-auto w-full max-w-[100rem] border-t px-6 py-6 sm:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="text-heading text-base font-semibold">
+                  Upload a PDF
+                </h2>
+                <p className="ns-muted max-w-xl">
+                  Attach or replace an official report card for a student in your
+                  classes.
+                </p>
+              </div>
+              <ReportCardUploadSheet
+                dashboardRole={role}
+                defaultTerm={term}
+                suggestedSchoolYears={yearOptions}
+              />
             </div>
-            <ReportCardUploadForm dashboardRole={role} />
           </section>
         ) : null}
-      </>
+      </div>
     );
   }
 
   if (!showUpload && !showRegistry) {
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-6 p-6 sm:p-8">
-        <p className="text-muted-foreground text-sm">
+      <div className="ns-page-shell space-y-6">
+        <WorkspacePageHeader
+          eyebrow={siteConfig.shortName}
+          title="Report Cards"
+          description="Track reporting progress, review student reports, and manage completed records."
+        />
+        <p className="ns-muted">
           Report card tools are not available in this workspace.
         </p>
         <Button asChild variant="outline" size="sm">
@@ -81,23 +105,5 @@ export default async function ReportCardsPage({
     );
   }
 
-  return (
-    <div className="mx-auto w-full max-w-6xl space-y-10 p-6 sm:p-8">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Report cards
-        </h1>
-        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          Upload PDFs to the private storage bucket, manage draft and final states,
-          and search the full library when your role includes records oversight.
-        </p>
-      </header>
-
-      {showUpload ? <ReportCardUploadForm dashboardRole={role} /> : null}
-
-      {showRegistry ? (
-        <ReportCardRegistrySection role={role} searchParams={sp} />
-      ) : null}
-    </div>
-  );
+  return <ReportCardsCommandCenter role={role} searchParams={sp} />;
 }

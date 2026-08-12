@@ -161,8 +161,7 @@ function SignalCard({ card }: { card: SignalCardModel }) {
 }
 
 /**
- * Operational health metrics — compact title / figure / status.
- * Uses shared Card metric density + Badge semantic variants.
+ * @deprecated Prefer AdminSchoolPulse via loadAdminCommandCenter.
  */
 export function AdminOperationalSignals({
   stats,

@@ -48,9 +48,16 @@ import {
 } from "@/features/admin/staff-directory/staff-members-actions";
 import {
   resendStaffMemberInvitationAction,
+  sendStaffMemberSetupLinkAction,
   type SendStaffInvitationsState,
 } from "@/features/admin/staff-directory/send-staff-invitations-actions";
 import { buildStaffInviteLink } from "@/lib/staff/staff-invite-link";
+import {
+  canResendStaffMemberInvitation,
+  canSendActiveStaffPasswordReset,
+  canSendStaffSetupLink,
+  formatInviteSentHint,
+} from "@/lib/staff/staff-invite-email";
 import { canSendStaffInvitation } from "@/lib/staff/staff-roster-status";
 import { WorkspaceToast, useWorkspaceToast } from "@/components/workspace/workspace-toast";
 
@@ -109,6 +116,10 @@ export function StaffProfileActions({
     SendStaffInvitationsState | undefined,
     FormData
   >(resendStaffMemberInvitationAction, undefined);
+  const [setupState, setupAction, setupPending] = useActionState<
+    SendStaffInvitationsState | undefined,
+    FormData
+  >(sendStaffMemberSetupLinkAction, undefined);
 
   const isSelf = member.profile_id === currentUserId;
   const isArchived = member.displayStatus === "archived";
@@ -116,7 +127,11 @@ export function StaffProfileActions({
   const hasEmail = Boolean(member.email?.trim());
   const gradeIds = grades.map((g) => g.gradeLevelId);
   const pending =
-    deactivatePending || reactivatePending || archivePending || resendPending;
+    deactivatePending ||
+    reactivatePending ||
+    archivePending ||
+    resendPending ||
+    setupPending;
 
   const latestInviteForEligibility =
     member.displayStatus === "invitation_sent" || member.displayStatus === "opened"
@@ -132,20 +147,38 @@ export function StaffProfileActions({
     email: member.email,
     latestInvite: latestInviteForEligibility,
   });
-  const canResend =
-    !member.profile_id &&
-    !isArchived &&
-    !isDisabled &&
-    (member.displayStatus === "invitation_sent" ||
-      member.displayStatus === "opened") &&
-    hasEmail;
+  const canResend = canResendStaffMemberInvitation({
+    profileId: member.profile_id,
+    archivedAt: member.archived_at,
+    membershipStatus: member.status,
+    displayStatus: member.displayStatus,
+    email: member.email,
+    authEmailConfirmed: member.authEmailConfirmed,
+  });
+  const canSetup = canSendStaffSetupLink({
+    profileId: member.profile_id,
+    archivedAt: member.archived_at,
+    membershipStatus: member.status,
+    displayStatus: member.displayStatus,
+    email: member.email,
+    authEmailConfirmed: member.authEmailConfirmed,
+  });
+  const canActiveReset = canSendActiveStaffPasswordReset({
+    profileId: member.profile_id,
+    archivedAt: member.archived_at,
+    membershipStatus: member.status,
+    displayStatus: member.displayStatus,
+    email: member.email,
+  });
   const showSendOrResend =
-    (canSendNew || canResend) && !isArchived && !isDisabled;
+    (canSendNew || canResend || canSetup) && !isArchived && !isDisabled;
   const canCopyLink =
     Boolean(member.inviteToken) &&
     !member.profile_id &&
     !isArchived &&
-    Boolean(loginBaseUrl);
+    Boolean(loginBaseUrl) &&
+    !canSetup;
+  const sentHint = canResend ? formatInviteSentHint(member.inviteSentAt) : null;
 
   const handled = useRef<string | null>(null);
   useEffect(() => {
@@ -155,15 +188,18 @@ export function StaffProfileActions({
         ? `r:${reactivateState.message}`
         : archiveState?.ok
           ? `a:${archiveState.message}`
-          : resendState?.ok
-            ? `i:${resendState.message}`
-            : null;
+          : setupState?.ok
+            ? `s:${setupState.message}`
+            : resendState?.ok
+              ? `i:${resendState.message}`
+              : null;
     if (!key || handled.current === key) return;
     handled.current = key;
     const msg =
       (deactivateState?.ok && deactivateState.message) ||
       (reactivateState?.ok && reactivateState.message) ||
       (archiveState?.ok && archiveState.message) ||
+      (setupState?.ok && setupState.message) ||
       (resendState?.ok && resendState.message) ||
       "Done.";
     showToast("success", msg);
@@ -174,6 +210,7 @@ export function StaffProfileActions({
     reactivateState,
     archiveState,
     resendState,
+    setupState,
     router,
     showToast,
   ]);
@@ -183,9 +220,17 @@ export function StaffProfileActions({
       (deactivateState && !deactivateState.ok && deactivateState.message) ||
       (reactivateState && !reactivateState.ok && reactivateState.message) ||
       (archiveState && !archiveState.ok && archiveState.message) ||
+      (setupState && !setupState.ok && setupState.message) ||
       (resendState && !resendState.ok && resendState.message);
     if (err) showToast("error", err);
-  }, [deactivateState, reactivateState, archiveState, resendState, showToast]);
+  }, [
+    deactivateState,
+    reactivateState,
+    archiveState,
+    setupState,
+    resendState,
+    showToast,
+  ]);
 
   return (
     <>
@@ -202,6 +247,48 @@ export function StaffProfileActions({
             >
               Edit staff
             </Button>
+          ) : null}
+          {canSetup ? (
+            <form action={setupAction}>
+              <input type="hidden" name="staffMemberId" value={member.id} />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={pending}
+              >
+                {setupPending ? "Sending…" : "Send setup link"}
+              </Button>
+            </form>
+          ) : null}
+          {canActiveReset ? (
+            <form action={setupAction}>
+              <input type="hidden" name="staffMemberId" value={member.id} />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={pending}
+              >
+                {setupPending ? "Sending…" : "Send password reset"}
+              </Button>
+            </form>
+          ) : null}
+          {canResend ? (
+            <form action={resendAction}>
+              <input type="hidden" name="staffMemberId" value={member.id} />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={pending}
+              >
+                {resendPending ? "Resending…" : "Resend invitation"}
+              </Button>
+            </form>
           ) : null}
           {member.role === "teacher" && !isArchived && !isDisabled ? (
             <DropdownMenu>
@@ -227,6 +314,11 @@ export function StaffProfileActions({
             </DropdownMenu>
           ) : null}
         </div>
+        {sentHint ? (
+          <p className="text-muted-foreground text-xs" role="status">
+            {sentHint}
+          </p>
+        ) : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -252,14 +344,36 @@ export function StaffProfileActions({
                   }
                   const fd = new FormData();
                   fd.set("staffMemberId", member.id);
+                  if (canSetup) {
+                    setupAction(fd);
+                    return;
+                  }
                   resendAction(fd);
                 }}
               >
                 {!hasEmail
                   ? "Send invite (add email…)"
-                  : canResend
-                    ? "Resend invite"
-                    : "Send invite"}
+                  : canSetup
+                    ? setupPending
+                      ? "Sending…"
+                      : "Send setup link"
+                    : canResend
+                      ? resendPending
+                        ? "Resending…"
+                        : "Resend invitation"
+                      : "Send invite"}
+              </DropdownMenuItem>
+            ) : null}
+            {canActiveReset ? (
+              <DropdownMenuItem
+                disabled={pending}
+                onSelect={() => {
+                  const fd = new FormData();
+                  fd.set("staffMemberId", member.id);
+                  setupAction(fd);
+                }}
+              >
+                {setupPending ? "Sending…" : "Send password reset"}
               </DropdownMenuItem>
             ) : null}
             {canCopyLink && member.inviteToken && loginBaseUrl ? (

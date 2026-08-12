@@ -1,17 +1,15 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Role } from "@/config/roles";
 
-import {
-  GENERIC_INFORMATION_LOAD_ERROR,
-  logServerError,
-} from "@/lib/errors/safe-user-message";
 import { loadCurrentSchoolYearLabel } from "@/lib/school-years/current-school-year";
 import { ReportCardRegistryFilters } from "@/features/report-cards/report-card-registry-filters";
 import { ReportCardRegistryTable } from "@/features/report-cards/report-card-registry-table";
 import {
   loadActiveClassesForRegistry,
   loadReportCardsRegistry,
+  REPORT_CARD_LIBRARY_LOAD_ERROR,
 } from "@/features/report-cards/load-report-cards-registry";
+import { pickReportCardsClassId } from "@/features/report-cards/load-report-cards-command-center";
 
 function spGet(
   sp: Record<string, string | string[] | undefined>,
@@ -31,27 +29,20 @@ export async function ReportCardRegistrySection({
   const supabase = await createServerSupabaseClient();
   if (!supabase) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Configure Supabase to search the report card library.
+      <p className="ns-muted text-sm">
+        Report cards are unavailable right now.
       </p>
     );
   }
 
   const currentYearRes = await loadCurrentSchoolYearLabel(supabase);
-  if (!currentYearRes.ok) {
-    return (
-      <p className="text-destructive text-sm" role="alert">
-        {currentYearRes.error}
-      </p>
-    );
-  }
-
   const yearFromQuery = spGet(searchParams, "year");
+  const classFromQuery = pickReportCardsClassId(searchParams) ?? "";
   const defaults = {
-    year: yearFromQuery || currentYearRes.label || "",
+    year: yearFromQuery || (currentYearRes.ok ? currentYearRes.label : "") || "",
     term: spGet(searchParams, "term"),
     status: spGet(searchParams, "status"),
-    classId: spGet(searchParams, "class"),
+    classId: classFromQuery || spGet(searchParams, "class"),
     q: spGet(searchParams, "q"),
   };
 
@@ -64,28 +55,25 @@ export async function ReportCardRegistrySection({
       q: defaults.q || null,
     }),
     loadActiveClassesForRegistry(supabase),
-    supabase.from("school_years").select("label").order("starts_on", { ascending: false }),
+    supabase
+      .from("school_years")
+      .select("label")
+      .order("starts_on", { ascending: false }),
   ]);
-
-  if (yearsRes.error) {
-    logServerError("report-cards.registry.schoolYears", yearsRes.error.message);
-  }
 
   const yearOptions = yearsRes.error
     ? []
-    : (yearsRes.data?.map((y) => y.label) ?? []);
-  const listErr =
-    registry.error ??
-    classes.error ??
-    (yearsRes.error ? GENERIC_INFORMATION_LOAD_ERROR : null);
+    : (yearsRes.data?.map((y) => y.label).filter(Boolean) ?? []);
+  const listErr = registry.error ?? classes.error;
 
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold tracking-tight">Library search</h2>
-        <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-          Filter by year, class, student, or status. Downloads use short-lived signed
-          URLs and are audited.
+        <h2 className="text-heading text-base font-semibold tracking-tight">
+          Report library
+        </h2>
+        <p className="ns-muted max-w-2xl">
+          Find completed and draft report cards by year, term, class, or student.
         </p>
       </div>
       <ReportCardRegistryFilters
@@ -96,7 +84,7 @@ export async function ReportCardRegistrySection({
       />
       {listErr ? (
         <p className="text-destructive text-sm" role="alert">
-          {listErr}
+          {listErr || REPORT_CARD_LIBRARY_LOAD_ERROR}
         </p>
       ) : null}
       <ReportCardRegistryTable rows={registry.items} dashboardRole={role} />

@@ -23,9 +23,19 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 import { isRole, type Role } from "@/config/roles";
 
+export type ExistingReportCardWarning = {
+  id: string;
+  status: "draft" | "final" | "archive";
+  title: string | null;
+};
+
 export type UploadReportCardState =
   | { ok: true; message?: string }
-  | { ok: false; message: string };
+  | {
+      ok: false;
+      message: string;
+      existing?: ExistingReportCardWarning;
+    };
 
 function isPdfMagic(buffer: ArrayBuffer): boolean {
   if (buffer.byteLength < 4) return false;
@@ -53,7 +63,7 @@ export async function uploadReportCardAction(
   if (!supabase) {
     return {
       ok: false,
-      message: "Supabase is not configured (missing public URL or anon key).",
+      message: "Report cards are unavailable right now.",
     };
   }
 
@@ -146,6 +156,57 @@ export async function uploadReportCardAction(
     return { ok: false, message: "This file does not look like a PDF." };
   }
 
+  const replaceExisting = String(formData.get("replaceExisting") ?? "") === "1";
+
+  const { data: existingRows, error: existingErr } = await supabase
+    .from("report_card_files")
+    .select("id, status, title, updated_at")
+    .eq("student_id", studentId)
+    .eq("school_year", schoolYear)
+    .eq("term", term)
+    .is("voided_at", null)
+    .neq("status", "archive")
+    .order("updated_at", { ascending: false });
+
+  if (existingErr) {
+    return {
+      ok: false,
+      message: "We couldn't check for an existing report. Try again.",
+    };
+  }
+
+  const existing =
+    (existingRows ?? []).find((row) => row.status === "final") ??
+    (existingRows ?? [])[0] ??
+    null;
+
+  if (existing && !replaceExisting) {
+    return {
+      ok: false,
+      message:
+        "A report card already exists for this student, year, and term. Replace it or cancel.",
+      existing: {
+        id: existing.id,
+        status: existing.status,
+        title: existing.title,
+      },
+    };
+  }
+
+  if (existing && replaceExisting && (existingRows ?? []).length > 0) {
+    const ids = (existingRows ?? []).map((row) => row.id);
+    const { error: archiveErr } = await supabase
+      .from("report_card_files")
+      .update({ status: "archive" })
+      .in("id", ids);
+    if (archiveErr) {
+      return {
+        ok: false,
+        message: "Could not replace the existing report card. Try again.",
+      };
+    }
+  }
+
   const storagePath = buildReportCardStoragePath({ studentId, schoolYear, term });
   const stored = await storeReportCardPdf({
     supabase,
@@ -171,5 +232,10 @@ export async function uploadReportCardAction(
   );
   revalidatePath(`/dashboard/${dashboardRole}/report-cards`, "page");
 
-  return { ok: true, message: "Report card uploaded." };
+  return {
+    ok: true,
+    message: replaceExisting
+      ? "Report card replaced."
+      : "Report card uploaded.",
+  };
 }

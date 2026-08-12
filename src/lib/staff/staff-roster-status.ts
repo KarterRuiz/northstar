@@ -15,6 +15,7 @@ export type StaffRosterDisplayStatus =
   | "ready"
   | "invitation_sent"
   | "opened"
+  | "account_exists"
   | "accepted"
   | "active"
   | "disabled"
@@ -25,6 +26,8 @@ export function resolveStaffRosterDisplayStatus(input: {
   archivedAt?: string | null;
   profileId?: string | null;
   profileIsActive?: boolean | null;
+  /** Confirmed Supabase Auth user for this email (unlinked staff row). */
+  authEmailConfirmed?: boolean | null;
   latestInvite?: {
     status: InvitationStatus;
     expires_at?: string | null;
@@ -43,6 +46,11 @@ export function resolveStaffRosterDisplayStatus(input: {
     return "active";
   }
 
+  // Confirmed Auth account exists but staff_members.profile_id is not linked yet.
+  if (input.authEmailConfirmed === true) {
+    return "account_exists";
+  }
+
   const invite = input.latestInvite;
   if (invite) {
     const display = staffInvitationDisplayStatus(invite);
@@ -59,15 +67,17 @@ export function resolveStaffRosterDisplayStatus(input: {
 export function staffRosterStatusLabel(status: StaffRosterDisplayStatus): string {
   switch (status) {
     case "draft":
-      return "Draft / Not Invited";
+      return "Draft";
     case "ready":
-      return "Ready";
+      return "Ready to invite";
     case "invitation_sent":
-      return "Invitation Sent";
+      return "Invited";
     case "opened":
-      return "Opened";
+      return "Invited · opened";
+    case "account_exists":
+      return "Setup needed";
     case "accepted":
-      return "Accepted";
+      return "Setup needed";
     case "active":
       return "Active";
     case "disabled":
@@ -85,6 +95,8 @@ export function staffRosterStatusKind(status: StaffRosterDisplayStatus): StatusK
       return "active";
     case "accepted":
       return "healthy";
+    case "account_exists":
+      return "pending";
     case "invitation_sent":
     case "opened":
       return "pending";

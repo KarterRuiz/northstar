@@ -37,6 +37,7 @@ export function ReportCardRegistryFilters({
       action={action}
       className="border-border bg-card/40 space-y-4 rounded-xl border p-4 shadow-sm"
     >
+      <input type="hidden" name="view" value="library" />
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-2">
           <Label htmlFor="rc-year">School year</Label>
@@ -107,7 +108,7 @@ export function ReportCardRegistryFilters({
           <Input
             id="rc-q"
             name="q"
-            placeholder="Name or student UUID"
+            placeholder="Name or student number"
             defaultValue={defaults.q}
             className="w-full max-w-sm"
           />

@@ -9,15 +9,17 @@ import {
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/auth/session";
-import { loadCurrentSchoolYearLabel } from "@/lib/school-years/current-school-year";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
+import { classBelongsToCurrentYear } from "@/features/teacher/dashboard/teacher-home-summaries";
 
-type SchoolYearEmbed = { label: string; starts_on: string } | null;
+type SchoolYearEmbed = { id?: string; label: string; starts_on: string } | null;
 type GradeEmbed = { name: string } | null;
 type ClassEmbed = {
   id: string;
   name: string;
   section: string | null;
   is_active: boolean;
+  school_year_id?: string | null;
   school_years: SchoolYearEmbed | SchoolYearEmbed[] | null;
   grade_levels: GradeEmbed | GradeEmbed[] | null;
 };
@@ -63,6 +65,13 @@ function schoolYearLabel(klass: ClassEmbed | null): string {
   return sy?.label?.trim() || "—";
 }
 
+function schoolYearIdOf(klass: ClassEmbed | null): string | null {
+  const fromColumn = klass?.school_year_id?.trim();
+  if (fromColumn) return fromColumn;
+  const sy = unwrapOne(klass?.school_years ?? null);
+  return sy?.id?.trim() || null;
+}
+
 function summaryClassLabel(c: TeacherAssignedClassSummary): string {
   const sec = c.section?.trim();
   const base = c.name.trim() || "Class";
@@ -84,11 +93,13 @@ export type TeacherAssignedClassSummary = {
   name: string;
   section: string | null;
   gradeName: string;
+  schoolYearId: string | null;
   schoolYearLabel: string;
   isActive: boolean;
   assignmentRole: string;
   studentCount: number;
 };
+
 
 export type TeacherRosterStudent = {
   studentId: string;
@@ -113,12 +124,16 @@ export type TeacherWorkspaceData =
     }
   | { ok: false; message: string };
 
-async function resolveCurrentSchoolYearLabel(
+async function resolveCurrentSchoolYear(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-): Promise<{ label: string | null; error: string | null }> {
-  const result = await loadCurrentSchoolYearLabel(supabase);
-  if (!result.ok) return { label: null, error: result.error };
-  return { label: result.label, error: null };
+): Promise<{ id: string | null; label: string | null; error: string | null }> {
+  const result = await loadCurrentSchoolYear(supabase);
+  if (!result.ok) return { id: null, label: null, error: result.error };
+  return {
+    id: result.year?.id ?? null,
+    label: result.year?.label?.trim() || null,
+    error: null,
+  };
 }
 
 /**
@@ -152,7 +167,8 @@ export const loadTeacherWorkspaceData = cache(
           name,
           section,
           is_active,
-          school_years ( label, starts_on ),
+          school_year_id,
+          school_years ( id, label, starts_on ),
           grade_levels ( name )
         )
       `,
@@ -164,18 +180,29 @@ export const loadTeacherWorkspaceData = cache(
       return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
 
+    const yearRes = await resolveCurrentSchoolYear(supabase);
+    if (yearRes.error) {
+      return { ok: false, message: yearRes.error };
+    }
+    const currentYearId = yearRes.id;
+    const currentSchoolYearLabel = yearRes.label;
+
     const assigned: TeacherAssignedClassSummary[] = [];
     const classIdSet = new Set<string>();
+    let hasDirectAssignments = false;
 
     for (const raw of (ctRows ?? []) as unknown as ClassTeacherRow[]) {
       const klass = unwrapOne(raw.classes ?? null);
       if (!klass?.id || klass.is_active === false) continue;
+      hasDirectAssignments = true;
+      if (!classBelongsToCurrentYear(schoolYearIdOf(klass), currentYearId)) continue;
       classIdSet.add(klass.id);
       assigned.push({
         id: klass.id,
         name: klass.name?.trim() || "Class",
         section: klass.section?.trim() || null,
         gradeName: gradeLabel(klass),
+        schoolYearId: schoolYearIdOf(klass),
         schoolYearLabel: schoolYearLabel(klass),
         isActive: klass.is_active,
         assignmentRole: raw.role?.trim() || "teacher",
@@ -183,8 +210,8 @@ export const loadTeacherWorkspaceData = cache(
       });
     }
 
-    // Grade-only: no class_teachers rows → classes in assigned grade levels.
-    if (assigned.length === 0) {
+    // Grade-only: no class_teachers rows → current-year classes in assigned grades.
+    if (!hasDirectAssignments) {
       const { data: gradeRows, error: gradeErr } = await supabase
         .from("staff_grade_levels")
         .select("grade_level_id")
@@ -197,7 +224,7 @@ export const loadTeacherWorkspaceData = cache(
 
       const gradeIds = [...new Set((gradeRows ?? []).map((r) => r.grade_level_id))];
       if (gradeIds.length > 0) {
-        const { data: gradeClasses, error: gcErr } = await supabase
+        let gradeQuery = supabase
           .from("classes")
           .select(
             `
@@ -205,12 +232,19 @@ export const loadTeacherWorkspaceData = cache(
             name,
             section,
             is_active,
-            school_years ( label, starts_on ),
+            school_year_id,
+            school_years ( id, label, starts_on ),
             grade_levels ( name )
           `,
           )
           .eq("is_active", true)
           .in("grade_level_id", gradeIds);
+
+        if (currentYearId) {
+          gradeQuery = gradeQuery.eq("school_year_id", currentYearId);
+        }
+
+        const { data: gradeClasses, error: gcErr } = await gradeQuery;
 
         if (gcErr) {
           logServerError("teacher-workspace.loadGradeClasses", gcErr.message);
@@ -219,12 +253,14 @@ export const loadTeacherWorkspaceData = cache(
 
         for (const klass of (gradeClasses ?? []) as unknown as ClassEmbed[]) {
           if (!klass?.id || klass.is_active === false) continue;
+          if (!classBelongsToCurrentYear(schoolYearIdOf(klass), currentYearId)) continue;
           classIdSet.add(klass.id);
           assigned.push({
             id: klass.id,
             name: klass.name?.trim() || "Class",
             section: klass.section?.trim() || null,
             gradeName: gradeLabel(klass),
+            schoolYearId: schoolYearIdOf(klass),
             schoolYearLabel: schoolYearLabel(klass),
             isActive: klass.is_active,
             assignmentRole: "grade_access",
@@ -242,13 +278,9 @@ export const loadTeacherWorkspaceData = cache(
 
     const classIds = [...classIdSet];
     if (classIds.length === 0) {
-      const yearRes = await resolveCurrentSchoolYearLabel(supabase);
-      if (yearRes.error) {
-        return { ok: false, message: yearRes.error };
-      }
       return {
         ok: true,
-        currentSchoolYearLabel: yearRes.label,
+        currentSchoolYearLabel,
         classes: [],
         roster: [],
         warnings,
@@ -318,11 +350,6 @@ export const loadTeacherWorkspaceData = cache(
     });
 
     const distinctStudentIds = [...new Set(roster.map((r) => r.studentId))];
-    const yearRes = await resolveCurrentSchoolYearLabel(supabase);
-    if (yearRes.error) {
-      return { ok: false, message: yearRes.error };
-    }
-    const currentSchoolYearLabel = yearRes.label;
 
     const submittedByStudent = new Set<string>();
     const reportCardByStudent = new Set<string>();
@@ -369,7 +396,7 @@ export const loadTeacherWorkspaceData = cache(
 
     if (!currentSchoolYearLabel) {
       warnings.push(
-        "No Current school year is set; report card completion is shown as incomplete until one is designated in School Settings.",
+        "Report card progress will appear once a school year is set.",
       );
     }
 

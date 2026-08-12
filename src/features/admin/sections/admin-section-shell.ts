@@ -32,6 +32,17 @@ const ADMIN_SECTIONS: Record<string, AdminSectionShellProps> = {
       "Track report card cycles, publishing status, and parent visibility.",
     emptyState: "Report card workflows will appear here.",
   },
+  "follow-up": {
+    title: "Follow-Up",
+    description: "The things worth coming back to.",
+    emptyState: "You’re caught up. Nothing currently needs your follow-up.",
+  },
+  calendar: {
+    title: "Calendar",
+    description:
+      "School events, important dates, and leadership notes in one place.",
+    emptyState: "No upcoming events.",
+  },
   "transition-notes": {
     title: "Transition notes",
     description:

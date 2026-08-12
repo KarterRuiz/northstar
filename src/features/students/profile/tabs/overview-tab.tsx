@@ -25,9 +25,12 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import {
+  canAccessFollowUp,
   canManageParentRecordRequests,
   type Role,
 } from "@/config/roles";
+import { OpenFollowUpsCard } from "@/features/follow-up/open-follow-ups-card";
+import { loadOpenFollowUpsForStudent } from "@/features/follow-up/load-follow-up-workspace";
 import {
   reportReadinessStatusLabel,
   type ReportReadinessStatus,
@@ -80,6 +83,7 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
     interventionsLoad,
     reportRows,
     parentReqLoad,
+    openFollowUps,
   ] = await Promise.all([
     loadStudentIntelligence(studentId, { viewerRole: role }),
     loadTransitionNotes(studentId),
@@ -90,6 +94,9 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
     canManageParentRecordRequests(role)
       ? loadParentRequestsForStudent(studentId)
       : Promise.resolve({ ok: true as const, rows: [] }),
+    canAccessFollowUp(role)
+      ? loadOpenFollowUpsForStudent(role, studentId)
+      : Promise.resolve([]),
   ]);
   const base = `/dashboard/${role}/students/${studentId}`;
 
@@ -140,6 +147,17 @@ export async function OverviewTab({ studentId, role }: OverviewTabProps) {
 
   return (
     <div className="space-y-5">
+      {canAccessFollowUp(role) ? (
+        <OpenFollowUpsCard
+          role={role}
+          items={openFollowUps}
+          prefill={{
+            studentId,
+            studentLabel: profile.fullName,
+            category: "students",
+          }}
+        />
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className={CARD_CHROME}>
           <CardHeader className="pb-2">

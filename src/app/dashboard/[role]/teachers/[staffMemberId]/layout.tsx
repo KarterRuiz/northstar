@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 
 import {
+  canAccessFollowUp,
   canManageStaffDirectory,
   isRole,
   type Role,
 } from "@/config/roles";
+import { FollowUpFormSheet } from "@/features/follow-up/follow-up-form-sheet";
 import { loadStaffInviteAccessOptions } from "@/features/admin/staff-directory/load-classes-for-staff-invite";
 import { loadStaffLeadershipMetrics } from "@/features/staff-profile/load-staff-leadership-metrics";
 import { StaffProfileActions } from "@/features/staff-profile/staff-profile-actions";
@@ -58,12 +60,7 @@ export default async function StaffProfileLayout({
     loadStaffInviteAccessOptions(),
   ]);
 
-  let loginBaseUrl: string;
-  try {
-    loginBaseUrl = getAuthEmailRedirectToLogin();
-  } catch {
-    loginBaseUrl = "http://localhost:3000/login";
-  }
+  const loginBaseUrl = getAuthEmailRedirectToLogin();
 
   void recordAuditEvent({
     action: "staff_profile_viewed",
@@ -82,15 +79,28 @@ export default async function StaffProfileLayout({
             classes={metrics.classes}
             metrics={metrics}
             actions={
-              <StaffProfileActions
-                member={member}
-                currentUserId={actor.userId}
-                grades={metrics.grades}
-                classes={metrics.classes}
-                availableGrades={accessOptions.grades}
-                availableClasses={accessOptions.classes}
-                loginBaseUrl={loginBaseUrl}
-              />
+              <div className="flex w-full flex-col gap-2">
+                {canAccessFollowUp(role) ? (
+                  <FollowUpFormSheet
+                    prefill={{
+                      staffMemberId,
+                      staffLabel: member.full_name,
+                      category: "staff",
+                    }}
+                    triggerLabel="Add Follow-Up"
+                    triggerVariant="outline"
+                  />
+                ) : null}
+                <StaffProfileActions
+                  member={member}
+                  currentUserId={actor.userId}
+                  grades={metrics.grades}
+                  classes={metrics.classes}
+                  availableGrades={accessOptions.grades}
+                  availableClasses={accessOptions.classes}
+                  loginBaseUrl={loginBaseUrl}
+                />
+              </div>
             }
           />
           <div className="border-border/70 border-t pt-5">

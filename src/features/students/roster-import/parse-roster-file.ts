@@ -1,85 +1,120 @@
 import * as XLSX from "xlsx";
 
+import { autoMapColumnsDetailed, materializeRowsFromMatrix } from "./auto-map-columns";
+import {
+  chooseRosterSheet,
+  detectHeaderRow,
+  matrixFromSheetRows,
+} from "./detect-roster-structure";
 import { TEMPLATE_HEADERS } from "./field-catalog";
 import type { ParsedRosterFile } from "./types";
 
 const MAX_ROWS = 5000;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
-function cellToString(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "";
-    // Avoid scientific notation for student numbers.
-    if (Number.isInteger(value) && Math.abs(value) < 1e15) {
-      return String(value);
-    }
-    return String(value);
-  }
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return String(value).trim();
+export type ParseRosterOptions = {
+  /** Force a specific workbook sheet (Excel). */
+  sheetName?: string | null;
+  /** Force a 0-based header row index within the chosen sheet matrix. */
+  headerRowIndex?: number | null;
+};
+
+function sheetToMatrix(sheet: XLSX.WorkSheet): string[][] {
+  const raw = XLSX.utils.sheet_to_json<(string | number | boolean | null | Date)[]>(
+    sheet,
+    {
+      header: 1,
+      defval: "",
+      blankrows: true,
+      raw: false,
+    },
+  );
+  return matrixFromSheetRows(raw);
 }
 
-function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const workbook = XLSX.read(text, { type: "string", raw: false });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return { headers: [], rows: [] };
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return { headers: [], rows: [] };
-  return sheetToRows(sheet);
+function readWorkbookSheets(
+  workbook: XLSX.WorkBook,
+): { name: string; matrix: string[][] }[] {
+  return workbook.SheetNames.map((name) => {
+    const sheet = workbook.Sheets[name];
+    return {
+      name,
+      matrix: sheet ? sheetToMatrix(sheet) : [],
+    };
+  }).filter((s) => s.matrix.some((row) => row.some((c) => c.trim().length > 0)));
 }
 
-function sheetToRows(sheet: XLSX.WorkSheet): {
-  headers: string[];
-  rows: Record<string, string>[];
-} {
-  const matrix = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
-    header: 1,
-    defval: "",
-    blankrows: false,
-    raw: false,
-  });
-
-  if (matrix.length === 0) return { headers: [], rows: [] };
-
-  const headerRow = matrix[0] ?? [];
-  const headers = headerRow.map((h, i) => {
-    const label = cellToString(h);
-    return label || `Column ${i + 1}`;
-  });
-
-  // Deduplicate headers so mapping stays unambiguous.
-  const seen = new Map<string, number>();
-  const uniqueHeaders = headers.map((h) => {
-    const count = seen.get(h) ?? 0;
-    seen.set(h, count + 1);
-    return count === 0 ? h : `${h} (${count + 1})`;
-  });
-
-  const rows: Record<string, string>[] = [];
-  for (let i = 1; i < matrix.length; i++) {
-    const line = matrix[i] ?? [];
-    const record: Record<string, string> = {};
-    let any = false;
-    for (let c = 0; c < uniqueHeaders.length; c++) {
-      const key = uniqueHeaders[c]!;
-      const val = cellToString(line[c]);
-      record[key] = val;
-      if (val) any = true;
-    }
-    if (any) rows.push(record);
+function finalizeParsedFile(input: {
+  matrix: string[][];
+  fileName: string;
+  format: "csv" | "xlsx";
+  sheetName: string;
+  availableSheets: ParsedRosterFile["availableSheets"];
+  sheetSelectionConfidence: ParsedRosterFile["sheetSelectionConfidence"];
+  needsSheetSelection: boolean;
+  headerRowIndex?: number | null;
+}): { ok: true; data: ParsedRosterFile } | { ok: false; message: string } {
+  if (input.matrix.length === 0) {
+    return { ok: false, message: "No column headers were found in the file." };
   }
 
-  return { headers: uniqueHeaders, rows };
+  const detection = detectHeaderRow(input.matrix);
+  const headerRowIndex =
+    input.headerRowIndex != null &&
+    input.headerRowIndex >= 0 &&
+    input.headerRowIndex < input.matrix.length
+      ? input.headerRowIndex
+      : detection.headerRowIndex;
+
+  const forcedHeader = input.headerRowIndex != null;
+  const { headers, rows } = materializeRowsFromMatrix(input.matrix, headerRowIndex);
+
+  if (headers.length === 0) {
+    return { ok: false, message: "No column headers were found in the file." };
+  }
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      message: "No student rows were found under the header row.",
+    };
+  }
+  if (rows.length > MAX_ROWS) {
+    return {
+      ok: false,
+      message: `This roster has ${rows.length} rows. Import up to ${MAX_ROWS} students at a time.`,
+    };
+  }
+
+  const confidence = forcedHeader ? "high" : detection.confidence;
+  const needsHeaderRowSelection = forcedHeader
+    ? false
+    : detection.needsSelection && !input.needsSheetSelection;
+
+  return {
+    ok: true,
+    data: {
+      headers,
+      rows,
+      fileName: input.fileName,
+      format: input.format,
+      matrix: input.matrix,
+      headerRowIndex,
+      headerRowNumber: headerRowIndex + 1,
+      headerDetectionConfidence: confidence,
+      headerCandidates: detection.candidates,
+      needsHeaderRowSelection,
+      sheetName: input.sheetName,
+      availableSheets: input.availableSheets,
+      sheetSelectionConfidence: input.sheetSelectionConfidence,
+      needsSheetSelection: input.needsSheetSelection,
+    },
+  };
 }
 
 export function parseRosterBuffer(
   buffer: ArrayBuffer,
   fileName: string,
+  options: ParseRosterOptions = {},
 ): { ok: true; data: ParsedRosterFile } | { ok: false; message: string } {
   if (buffer.byteLength === 0) {
     return { ok: false, message: "The file is empty." };
@@ -103,53 +138,86 @@ export function parseRosterBuffer(
   }
 
   try {
-    let headers: string[];
-    let rows: Record<string, string>[];
-
     if (isCsv) {
       const text = new TextDecoder("utf-8").decode(buffer);
-      ({ headers, rows } = parseCsv(text));
-    } else {
-      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const workbook = XLSX.read(text, { type: "string", raw: false });
       const sheetName = workbook.SheetNames[0];
-      if (!sheetName) {
-        return { ok: false, message: "The spreadsheet has no sheets." };
-      }
+      if (!sheetName) return { ok: false, message: "The file has no data." };
       const sheet = workbook.Sheets[sheetName];
-      if (!sheet) {
-        return { ok: false, message: "Could not read the first sheet." };
-      }
-      ({ headers, rows } = sheetToRows(sheet));
-    }
-
-    if (headers.length === 0) {
-      return { ok: false, message: "No column headers were found in the file." };
-    }
-    if (rows.length === 0) {
-      return { ok: false, message: "No student rows were found under the header row." };
-    }
-    if (rows.length > MAX_ROWS) {
-      return {
-        ok: false,
-        message: `This roster has ${rows.length} rows. Import up to ${MAX_ROWS} students at a time.`,
-      };
-    }
-
-    return {
-      ok: true,
-      data: {
-        headers,
-        rows,
+      if (!sheet) return { ok: false, message: "Could not read the CSV contents." };
+      const matrix = sheetToMatrix(sheet);
+      return finalizeParsedFile({
+        matrix,
         fileName,
-        format: isCsv ? "csv" : "xlsx",
-      },
-    };
+        format: "csv",
+        sheetName,
+        availableSheets: [
+          {
+            name: sheetName,
+            score: 100,
+            rowCount: Math.max(0, matrix.length - 1),
+            preview: (matrix[0] ?? []).filter(Boolean).slice(0, 5).join(" · ") || sheetName,
+          },
+        ],
+        sheetSelectionConfidence: "high",
+        needsSheetSelection: false,
+        headerRowIndex: options.headerRowIndex,
+      });
+    }
+
+    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    const sheets = readWorkbookSheets(workbook);
+    if (sheets.length === 0) {
+      return { ok: false, message: "The spreadsheet has no sheets." };
+    }
+
+    const choice = chooseRosterSheet(sheets);
+    const forcedSheet = options.sheetName?.trim() || null;
+    const selectedName =
+      forcedSheet && sheets.some((s) => s.name === forcedSheet)
+        ? forcedSheet
+        : choice.sheetName;
+
+    const selected = sheets.find((s) => s.name === selectedName) ?? sheets[0]!;
+    const needsSheetSelection =
+      Boolean(forcedSheet) ? false : choice.needsSelection && sheets.length > 1;
+
+    return finalizeParsedFile({
+      matrix: selected.matrix,
+      fileName,
+      format: "xlsx",
+      sheetName: selected.name,
+      availableSheets: choice.candidates,
+      sheetSelectionConfidence: forcedSheet ? "high" : choice.confidence,
+      needsSheetSelection,
+      headerRowIndex: options.headerRowIndex,
+    });
   } catch {
     return {
       ok: false,
       message: "Could not read that file. Check that it is a valid CSV or Excel workbook.",
     };
   }
+}
+
+/** Rebuild headers/rows after the admin picks a different header row (no re-upload). */
+export function reparseWithHeaderRow(
+  file: ParsedRosterFile,
+  headerRowIndex: number,
+): { ok: true; data: ParsedRosterFile; suggestedMapping: ReturnType<typeof autoMapColumnsDetailed> } | { ok: false; message: string } {
+  const finalized = finalizeParsedFile({
+    matrix: file.matrix,
+    fileName: file.fileName,
+    format: file.format,
+    sheetName: file.sheetName,
+    availableSheets: file.availableSheets,
+    sheetSelectionConfidence: file.sheetSelectionConfidence,
+    needsSheetSelection: false,
+    headerRowIndex,
+  });
+  if (!finalized.ok) return finalized;
+  const suggestedMapping = autoMapColumnsDetailed(finalized.data.headers);
+  return { ok: true, data: finalized.data, suggestedMapping };
 }
 
 export function buildBlankCsvTemplate(): string {
@@ -159,7 +227,7 @@ export function buildBlankCsvTemplate(): string {
 
 export function buildBlankXlsxTemplate(): Uint8Array {
   const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet([ [...TEMPLATE_HEADERS] ]);
+  const sheet = XLSX.utils.aoa_to_sheet([[...TEMPLATE_HEADERS]]);
   XLSX.utils.book_append_sheet(workbook, sheet, "Roster");
   const out = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as number[];
   return new Uint8Array(out);
@@ -177,16 +245,14 @@ export function buildErrorReportCsv(
   return `${lines.join("\n")}\n`;
 }
 
-export function buildImportReportCsv(
-  summary: {
-    added: number;
-    updated: number;
-    archived: number;
-    gradesCreated: number;
-    classesCreated: number;
-    errors: { rowNumber: number; message: string }[];
-  },
-): string {
+export function buildImportReportCsv(summary: {
+  added: number;
+  updated: number;
+  archived: number;
+  gradesCreated: number;
+  classesCreated: number;
+  errors: { rowNumber: number; message: string }[];
+}): string {
   const lines = [
     '"Section","Detail"',
     `"Added","${summary.added}"`,

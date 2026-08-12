@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  canAccessFollowUp,
   canManageParentRecordRequests,
   canManageStudents,
   canTeacherEditStudentBasicInfo,
@@ -11,6 +12,7 @@ import {
   type Role,
 } from "@/config/roles";
 import { Button } from "@/components/ui/button";
+import { FollowUpFormSheet } from "@/features/follow-up/follow-up-form-sheet";
 import { StudentProfileFooter } from "@/features/students/profile/student-profile-footer";
 import { StudentProfileHeader } from "@/features/students/profile/student-profile-header";
 import { StudentProfileIndicators } from "@/features/students/profile/student-profile-indicators";
@@ -102,6 +104,17 @@ export default async function StudentProfileLayout({
               shellMetrics={shellMetrics}
               actions={
                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                  {canAccessFollowUp(role) ? (
+                    <FollowUpFormSheet
+                      prefill={{
+                        studentId,
+                        studentLabel: profileLoad.profile.fullName,
+                        category: "students",
+                      }}
+                      triggerLabel="Add Follow-Up"
+                      triggerVariant="outline"
+                    />
+                  ) : null}
                   {canManageParentRecordRequests(role) ? (
                     <Button variant="secondary" asChild className="w-full sm:w-auto">
                       <Link

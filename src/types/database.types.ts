@@ -866,6 +866,69 @@ export type Database = {
         };
         Relationships: [];
       };
+      follow_ups: {
+        Row: {
+          id: string;
+          title: string;
+          note: string | null;
+          category: "students" | "staff" | "families" | "records" | "classes";
+          status: "open" | "waiting" | "completed";
+          due_on: string | null;
+          created_by_profile_id: string;
+          completed_by_profile_id: string | null;
+          student_id: string | null;
+          staff_member_id: string | null;
+          class_id: string | null;
+          parent_request_id: string | null;
+          transition_note_id: string | null;
+          source_type: string;
+          source_id: string | null;
+          created_at: string;
+          updated_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          note?: string | null;
+          category: "students" | "staff" | "families" | "records" | "classes";
+          status?: "open" | "waiting" | "completed";
+          due_on?: string | null;
+          created_by_profile_id: string;
+          completed_by_profile_id?: string | null;
+          student_id?: string | null;
+          staff_member_id?: string | null;
+          class_id?: string | null;
+          parent_request_id?: string | null;
+          transition_note_id?: string | null;
+          source_type?: string;
+          source_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          note?: string | null;
+          category?: "students" | "staff" | "families" | "records" | "classes";
+          status?: "open" | "waiting" | "completed";
+          due_on?: string | null;
+          created_by_profile_id?: string;
+          completed_by_profile_id?: string | null;
+          student_id?: string | null;
+          staff_member_id?: string | null;
+          class_id?: string | null;
+          parent_request_id?: string | null;
+          transition_note_id?: string | null;
+          source_type?: string;
+          source_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
       staff_members: {
         Row: {
           id: string;
@@ -1167,6 +1230,111 @@ export type Database = {
           code?: string;
           starts_on?: string;
           ends_on?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      school_events: {
+        Row: {
+          id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          all_day: boolean;
+          category:
+            | "school"
+            | "meeting"
+            | "academic"
+            | "reporting"
+            | "pd"
+            | "event"
+            | "deadline";
+          audience: "leadership" | "all_staff" | "whole_school";
+          location: string | null;
+          created_by_profile_id: string;
+          created_at: string;
+          updated_at: string;
+          archived_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          description?: string | null;
+          starts_at: string;
+          ends_at: string;
+          all_day?: boolean;
+          category?:
+            | "school"
+            | "meeting"
+            | "academic"
+            | "reporting"
+            | "pd"
+            | "event"
+            | "deadline";
+          audience?: "leadership" | "all_staff" | "whole_school";
+          location?: string | null;
+          created_by_profile_id: string;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          description?: string | null;
+          starts_at?: string;
+          ends_at?: string;
+          all_day?: boolean;
+          category?:
+            | "school"
+            | "meeting"
+            | "academic"
+            | "reporting"
+            | "pd"
+            | "event"
+            | "deadline";
+          audience?: "leadership" | "all_staff" | "whole_school";
+          location?: string | null;
+          created_by_profile_id?: string;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+        };
+        Relationships: [];
+      };
+      calendar_notes: {
+        Row: {
+          id: string;
+          note: string;
+          note_date: string;
+          created_by_profile_id: string;
+          related_staff_member_id: string | null;
+          related_student_id: string | null;
+          related_class_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          note: string;
+          note_date: string;
+          created_by_profile_id: string;
+          related_staff_member_id?: string | null;
+          related_student_id?: string | null;
+          related_class_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          note?: string;
+          note_date?: string;
+          created_by_profile_id?: string;
+          related_staff_member_id?: string | null;
+          related_student_id?: string | null;
+          related_class_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

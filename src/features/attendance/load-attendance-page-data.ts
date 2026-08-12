@@ -3,18 +3,20 @@ import "server-only";
 import { cache } from "react";
 
 import { loadSchoolYearTermContext } from "@/features/attendance-behavior/load-support-flag-data";
+import { schoolTodayIso } from "@/features/calendar/school-timezone";
 import { ATTENDANCE_ABSENCE_THRESHOLD } from "@/features/interventions/support-flags";
+import { loadTeacherWorkspaceData } from "@/features/teacher/dashboard/load-teacher-workspace-data";
 import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
 } from "@/lib/errors/safe-user-message";
+import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
 import {
   hasAttendanceConcernMetrics,
   tallyAttendanceConcernMetrics,
 } from "./attendance-concerns";
-import { loadTeacherWorkspaceData } from "@/features/teacher/dashboard/load-teacher-workspace-data";
-import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import type { AttendanceStatus } from "./schema";
 import { attendanceStatuses } from "./schema";
@@ -49,7 +51,7 @@ export type AttendancePageData =
   | { ok: false; message: string };
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return schoolTodayIso();
 }
 
 function parseStatus(value: string | null): AttendanceStatus | null {

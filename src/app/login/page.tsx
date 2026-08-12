@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { signInWithPassword, type SignInState } from "@/lib/auth/actions";
 import { loadStaffInviteLoginHint } from "@/features/admin/staff-directory/load-staff-invite-login-hint";
+import { LoginRecoveryHashRedirect } from "@/components/auth/login-recovery-hash-redirect";
 import {
   Card,
   CardContent,
@@ -11,6 +13,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { siteConfig } from "@/config/site";
+import {
+  AUTH_CALLBACK_PATH,
+  AUTH_SETUP_PASSWORD_PATH,
+} from "@/lib/auth/auth-redirect";
 
 import { LoginForm } from "./login-form";
 
@@ -19,15 +25,30 @@ const initialSignInState: SignInState = { error: null };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; staff_invite?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    staff_invite?: string;
+    code?: string;
+    type?: string;
+    next?: string;
+  }>;
 }) {
   const params = await searchParams;
+  if (params.code) {
+    const callback = new URLSearchParams({
+      code: params.code,
+      next: AUTH_SETUP_PASSWORD_PATH,
+    });
+    if (params.type) callback.set("type", params.type);
+    redirect(`${AUTH_CALLBACK_PATH}?${callback.toString()}`);
+  }
   const profileError = params.error === "profile";
   const deactivatedError = params.error === "deactivated";
   const inviteHint = await loadStaffInviteLoginHint(params.staff_invite);
 
   return (
     <div className="bg-background flex min-h-svh flex-col items-center justify-center p-4">
+      <LoginRecoveryHashRedirect />
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Sign in to {siteConfig.name}</CardTitle>
@@ -47,8 +68,9 @@ export default async function LoginPage({
               <p className="mt-1">
                 Confirm you are signing in as{" "}
                 <span className="text-foreground font-medium">{inviteHint.emailHint}</span>.
-                Create your password from the invite email if you have not yet, then sign in.
-                Your role and class access were already assigned by your school.
+                Open the NorthStar email we sent to create your password — you will not need a
+                temporary password. Your role and class access were already assigned by your
+                school.
               </p>
             </div>
           ) : null}

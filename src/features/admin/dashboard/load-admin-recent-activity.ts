@@ -12,7 +12,9 @@ const LEADERSHIP_ACTIVITY_ACTIONS = [
   "transition_note_submitted",
   "transition_note_reviewed",
   "staff_invited",
+  "staff_invitation_resent",
   "staff_invite_accepted",
+  "password_setup_completed",
   "parent_request_created",
   "parent_request_updated",
   "parent_request_completed",
@@ -78,11 +80,27 @@ function describeActivity(
             : "Staff invitation sent",
         href: "/dashboard/admin/teachers",
       };
+    case "staff_invitation_resent":
+      return {
+        summary: fullName
+          ? `Staff invitation resent to ${fullName}`
+          : email
+            ? `Staff invitation resent to ${email}`
+            : "Staff invitation resent",
+        href: "/dashboard/admin/teachers",
+      };
     case "staff_invite_accepted":
       return {
         summary: email
           ? `${email} accepted a staff invitation`
           : "Staff invitation accepted",
+        href: "/dashboard/admin/teachers",
+      };
+    case "password_setup_completed":
+      return {
+        summary: email
+          ? `${email} finished NorthStar password setup`
+          : "Staff password setup completed",
         href: "/dashboard/admin/teachers",
       };
     case "parent_request_created":

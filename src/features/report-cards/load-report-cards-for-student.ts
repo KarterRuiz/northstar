@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { logServerError } from "@/lib/errors/safe-user-message";
 import type { ReportCardFileStatus } from "@/lib/report-cards/status";
 import type { Database } from "@/types/database.types";
 
@@ -18,33 +19,13 @@ export type ReportCardListItem = {
   voidReason: string | null;
 };
 
-type DbRow = {
-  id: string;
-  student_id: string;
-  school_year: string;
-  term: string;
-  title: string | null;
-  storage_path: string;
-  status: ReportCardFileStatus;
-  source: string;
-  uploaded_by: string | null;
-  created_at: string;
-  voided_at: string | null;
-  void_reason: string | null;
-  profiles: { full_name: string | null } | { full_name: string | null }[] | null;
-};
-
-function unwrapProfile(
-  v: DbRow["profiles"],
-): { full_name: string | null } | null {
-  if (v == null) return null;
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
+const LIST_LOAD_ERROR = "We couldn't load report cards right now. Try again.";
 
 export async function loadReportCardsForStudent(
   supabase: SupabaseClient<Database>,
   studentId: string,
 ): Promise<{ items: ReportCardListItem[]; listError: string | null }> {
+  // uploaded_by references auth.users, not profiles — do not embed profiles.
   const { data: rows, error } = await supabase
     .from("report_card_files")
     .select(
@@ -60,34 +41,57 @@ export async function loadReportCardsForStudent(
       uploaded_by,
       created_at,
       voided_at,
-      void_reason,
-      profiles:uploaded_by ( full_name )
+      void_reason
     `,
     )
     .eq("student_id", studentId)
     .order("created_at", { ascending: false });
 
   if (error || !rows) {
-    return { items: [], listError: error?.message ?? "Could not load files." };
+    logServerError(
+      "report-cards.studentList",
+      error?.message ?? "Could not load files.",
+    );
+    return { items: [], listError: LIST_LOAD_ERROR };
   }
 
-  const out: ReportCardListItem[] = (rows as unknown as DbRow[]).map((row) => {
-    const profile = unwrapProfile(row.profiles);
-    return {
-      id: row.id,
-      schoolYear: row.school_year,
-      term: row.term,
-      title: row.title,
-      storagePath: row.storage_path,
-      status: row.status,
-      source: row.source === "generated" ? "generated" : "uploaded",
-      createdAt: row.created_at,
-      uploadedBy: row.uploaded_by,
-      uploadedByName: profile?.full_name?.trim() || null,
-      voidedAt: row.voided_at,
-      voidReason: row.void_reason,
-    };
-  });
+  const uploaderIds = [
+    ...new Set(
+      rows.map((r) => r.uploaded_by).filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const nameByUploader = new Map<string, string>();
+  if (uploaderIds.length > 0) {
+    const { data: profiles, error: profileErr } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", uploaderIds);
+    if (profileErr) {
+      logServerError("report-cards.studentList.profiles", profileErr.message);
+    } else {
+      for (const p of profiles ?? []) {
+        const name = p.full_name?.trim();
+        if (name) nameByUploader.set(p.id, name);
+      }
+    }
+  }
+
+  const out: ReportCardListItem[] = rows.map((row) => ({
+    id: row.id,
+    schoolYear: row.school_year,
+    term: row.term,
+    title: row.title,
+    storagePath: row.storage_path,
+    status: row.status,
+    source: row.source === "generated" ? "generated" : "uploaded",
+    createdAt: row.created_at,
+    uploadedBy: row.uploaded_by,
+    uploadedByName: row.uploaded_by
+      ? nameByUploader.get(row.uploaded_by) ?? null
+      : null,
+    voidedAt: row.voided_at,
+    voidReason: row.void_reason,
+  }));
 
   return { items: out, listError: null };
 }

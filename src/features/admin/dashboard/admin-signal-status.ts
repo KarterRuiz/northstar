@@ -1,14 +1,16 @@
 import type { VariantProps } from "class-variance-authority";
 
 import type { badgeVariants } from "@/components/ui/badge";
+import type { StatusKind } from "@/components/ui/status-badge";
 
 /**
- * Shared operational signal status language for Admin Overview.
- * Use one of these labels consistently across signal cards.
+ * Shared status language for Admin Home pulse / summaries.
+ * Prefer honest labels — never claim "Healthy" for a mere headcount.
  * Colors come from design-system semantic tokens — not page-local palettes.
  */
 export const ADMIN_SIGNAL_STATUSES = [
-  "Healthy",
+  "Clear",
+  "Active",
   "On track",
   "Needs attention",
   "Action needed",
@@ -22,8 +24,9 @@ type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
 /** Prefer Badge `variant={adminSignalBadgeVariant(status)}` over ad-hoc color classes. */
 export function adminSignalBadgeVariant(status: AdminSignalStatus): BadgeVariant {
   switch (status) {
-    case "Healthy":
+    case "Clear":
     case "On track":
+    case "Active":
       return "success";
     case "Needs attention":
       return "warning";
@@ -34,16 +37,31 @@ export function adminSignalBadgeVariant(status: AdminSignalStatus): BadgeVariant
   }
 }
 
+export function adminSignalStatusKind(status: AdminSignalStatus): StatusKind {
+  switch (status) {
+    case "Clear":
+    case "On track":
+    case "Active":
+      return "active";
+    case "Needs attention":
+      return "needs_attention";
+    case "Action needed":
+      return "expired";
+    case "Not started":
+      return "not_started";
+  }
+}
+
 export function enrollmentSignalStatus(count: number): AdminSignalStatus {
-  return count > 0 ? "Healthy" : "Needs attention";
+  return count > 0 ? "Active" : "Needs attention";
 }
 
 export function classesSignalStatus(count: number): AdminSignalStatus {
-  return count > 0 ? "Healthy" : "Needs attention";
+  return count > 0 ? "Active" : "Needs attention";
 }
 
 export function queueSignalStatus(count: number): AdminSignalStatus {
-  if (count === 0) return "Healthy";
+  if (count === 0) return "Clear";
   if (count >= 10) return "Action needed";
   return "Needs attention";
 }
@@ -64,12 +82,33 @@ export function reportCardSignalStatus(args: {
 export function attendanceSignalStatus(args: {
   classesNotSubmitted: number;
   studentsNeedingFollowUp: number;
+  hasClassesExpectingAttendance?: boolean;
 }): AdminSignalStatus {
+  if (args.hasClassesExpectingAttendance === false) {
+    return "Not started";
+  }
   if (args.classesNotSubmitted === 0 && args.studentsNeedingFollowUp === 0) {
-    return "Healthy";
+    return "Clear";
   }
   if (args.classesNotSubmitted >= 5 || args.studentsNeedingFollowUp >= 10) {
     return "Action needed";
   }
   return "Needs attention";
+}
+
+export function staffOpsSignalStatus(args: {
+  activeStaff: number;
+  pendingInvitations: number;
+  readyToInvite: number;
+  teachersWithMissingAttendance: number;
+}): AdminSignalStatus {
+  if (args.teachersWithMissingAttendance > 0) {
+    return args.teachersWithMissingAttendance >= 5
+      ? "Action needed"
+      : "Needs attention";
+  }
+  if (args.pendingInvitations > 0 || args.readyToInvite > 0) {
+    return "Needs attention";
+  }
+  return args.activeStaff > 0 ? "Active" : "Not started";
 }

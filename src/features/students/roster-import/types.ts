@@ -2,12 +2,48 @@ import type { RosterFieldId } from "./field-catalog";
 
 export type ColumnMapping = Partial<Record<RosterFieldId, string | null>>;
 
+export type MappingOrigin = "auto" | "manual";
+
+/** Tracks whether each mapped field came from auto-match or the admin. */
+export type ColumnMappingOrigins = Partial<Record<RosterFieldId, MappingOrigin>>;
+
+export type HeaderRowCandidate = {
+  /** 1-based spreadsheet row number for display. */
+  rowNumber: number;
+  /** 0-based index into `matrix`. */
+  rowIndex: number;
+  preview: string[];
+  score: number;
+  aliasHits: number;
+  requiredHits: number;
+};
+
+export type SheetCandidate = {
+  name: string;
+  score: number;
+  rowCount: number;
+  preview: string;
+};
+
 export type ParsedRosterFile = {
   headers: string[];
   /** Raw cell values keyed by original header. */
   rows: Record<string, string>[];
   fileName: string;
   format: "csv" | "xlsx";
+  /** Full sheet matrix (strings) so the admin can change the header row. */
+  matrix: string[][];
+  /** 0-based header row index within `matrix`. */
+  headerRowIndex: number;
+  /** 1-based header row number for display. */
+  headerRowNumber: number;
+  headerDetectionConfidence: "high" | "medium" | "low";
+  headerCandidates: HeaderRowCandidate[];
+  needsHeaderRowSelection: boolean;
+  sheetName: string;
+  availableSheets: SheetCandidate[];
+  sheetSelectionConfidence: "high" | "medium" | "low";
+  needsSheetSelection: boolean;
 };
 
 export type MappedRosterRow = {

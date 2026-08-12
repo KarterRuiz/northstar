@@ -21,6 +21,11 @@ type StaffTodayPanelProps = {
   role: Role;
 };
 
+/**
+ * @deprecated Do not mount on Admin Overview.
+ * Teacher personal Present/Absent/Late is out of scope for Overview —
+ * use class attendance compliance signals instead.
+ */
 export async function StaffTodayPanel({ role }: StaffTodayPanelProps) {
   if (!isLeadershipAuditRole(role)) return null;
 

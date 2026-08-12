@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { isRole, type Role } from "@/config/roles";
-import { siteConfig } from "@/config/site";
+import { canManageClassEnrollment, isRole, type Role } from "@/config/roles";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { TeacherBulkAddForm } from "@/features/teacher/roster/teacher-bulk-add-form";
+import { classWorkspacePath } from "@/features/teacher/class-workspace/constants";
 import { loadTeacherRosterClassContext } from "@/features/teacher/roster/load-teacher-roster-page";
 import { isUuid } from "@/lib/students/uuid";
 
@@ -24,45 +25,37 @@ export default async function TeacherBulkAddStudentsPage({ params }: PageProps) 
   if (role !== "teacher") notFound();
   if (!isUuid(classId)) notFound();
 
+  const studentsHref = classWorkspacePath(classId, "students");
+
+  if (!canManageClassEnrollment(role)) {
+    return (
+      <Card className="space-y-3 p-4 sm:p-5">
+        <h2 className="text-heading text-base font-semibold">Class roster is managed by leadership</h2>
+        <p className="ns-muted">
+          Ask an administrator or school leader to add students to this class. You can still
+          open and work with the students already assigned to you.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href={studentsHref}>Back to students</Link>
+        </Button>
+      </Card>
+    );
+  }
+
   const ctx = await loadTeacherRosterClassContext(classId);
   if (!ctx.ok) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4 p-6 sm:p-8">
-        <p className="text-destructive text-sm" role="alert">
-          {ctx.message}
-        </p>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/dashboard/teacher/classes">All my classes</Link>
-        </Button>
-      </div>
+      <p className="text-destructive text-sm" role="alert">
+        {ctx.message}
+      </p>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 p-6 sm:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <p className="text-muted-foreground text-[0.65rem] font-semibold tracking-widest uppercase">
-            {siteConfig.shortName} · Class roster
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-            Bulk add students
-          </h1>
-          <p className="text-muted-foreground max-w-xl text-sm leading-snug">
-            Paste names to create students and active enrollments in{" "}
-            <span className="text-foreground font-medium">{ctx.classLabel}</span>.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" className="shrink-0" asChild>
-          <Link href={ctx.rosterHref}>Back to roster</Link>
-        </Button>
-      </div>
-
-      <TeacherBulkAddForm
-        classId={ctx.classId}
-        classLabel={ctx.classLabel}
-        rosterHref={ctx.rosterHref}
-      />
-    </div>
+    <TeacherBulkAddForm
+      classId={ctx.classId}
+      classLabel={ctx.classLabel}
+      rosterHref={ctx.rosterHref}
+    />
   );
 }

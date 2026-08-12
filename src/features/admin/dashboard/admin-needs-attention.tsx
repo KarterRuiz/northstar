@@ -2,7 +2,9 @@ import Link from "next/link";
 import { CheckCircle2, ChevronRight } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { WorkspaceSectionHeader } from "@/components/workspace/workspace-headers";
+import type { Role } from "@/config/roles";
 import { loadAdminActionItems } from "./load-admin-action-items";
 
 function plural(
@@ -12,8 +14,15 @@ function plural(
   return count === 1 ? noun.one : noun.other;
 }
 
-export async function AdminNeedsAttention() {
-  const { items, error } = await loadAdminActionItems();
+/**
+ * @deprecated Prefer AdminTodaysBrief — kept for reference / gradual cleanup.
+ */
+export async function AdminNeedsAttention({
+  role = "admin",
+}: {
+  role?: Role;
+}) {
+  const { items, error } = await loadAdminActionItems(role);
 
   return (
     <section
@@ -41,7 +50,7 @@ export async function AdminNeedsAttention() {
             className="text-success size-4 shrink-0"
             aria-hidden
           />
-          <p className="ns-body">Nothing needs your attention right now.</p>
+          <p className="ns-body">No urgent follow-up right now.</p>
         </div>
       ) : (
         <Card variant="table">
@@ -56,8 +65,20 @@ export async function AdminNeedsAttention() {
                     <span className="text-heading block text-sm font-medium">
                       {item.label}
                     </span>
-                    <span className="ns-meta mt-0.5 block">
-                      {item.count} {plural(item.count, item.countNoun)}
+                    <span className="ns-meta mt-0.5 flex flex-wrap items-center gap-2">
+                      <span>
+                        {item.count} {plural(item.count, item.countNoun)}
+                      </span>
+                      <StatusBadge
+                        status={
+                          item.urgency === "action_needed"
+                            ? "expired"
+                            : item.urgency === "pending"
+                              ? "pending"
+                              : "needs_attention"
+                        }
+                        className="text-[10px]"
+                      />
                     </span>
                   </span>
                   <ChevronRight

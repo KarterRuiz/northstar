@@ -53,6 +53,14 @@ export function canManageStudents(role: Role): boolean {
   return isLeadershipAuditRole(role);
 }
 
+/**
+ * Official class enrollment (add / remove students from a class roster).
+ * Leadership only. Teachers view and work with the assigned roster.
+ */
+export function canManageClassEnrollment(role: Role): boolean {
+  return canManageStudents(role);
+}
+
 /** Teachers may edit basic identity fields for students on their assigned class rosters. */
 export function canTeacherEditStudentBasicInfo(role: Role): boolean {
   return role === "teacher";
@@ -104,6 +112,37 @@ export function canManageReportCardLifecycle(role: Role): boolean {
 /** Void mistaken teacher-generated report card PDFs (audit retained). */
 export function canVoidGeneratedReportCard(role: Role): boolean {
   return role === "admin" || role === "principal" || role === "vice_principal";
+}
+
+/**
+ * Leadership Follow-Up workspace (`public.follow_ups` RLS: `is_school_leadership`).
+ * Teachers and registrars are excluded — this surface can include notes about staff.
+ */
+export function canAccessFollowUp(role: Role): boolean {
+  return isLeadershipAuditRole(role);
+}
+
+/**
+ * School Calendar write + leadership notes (`school_events` insert/update + `calendar_notes`).
+ * Leadership only. Teachers may *view* staff-visible events via `canViewCalendar`.
+ * Registrar is excluded — notes can mention staff, and planning is leadership work.
+ */
+export function canAccessCalendar(role: Role): boolean {
+  return isLeadershipAuditRole(role);
+}
+
+/**
+ * Read-only school calendar (Home preview + `/calendar` workspace).
+ * Teachers see All Staff / Whole School only — RLS already hides leadership
+ * events and every calendar note. Does not grant create/edit.
+ */
+export function canViewCalendar(role: Role): boolean {
+  return isLeadershipAuditRole(role) || role === "teacher";
+}
+
+/** Private leadership date notes — never teachers, students, or families. */
+export function canManageCalendarNotes(role: Role): boolean {
+  return isLeadershipAuditRole(role);
 }
 
 /** Matches `transition_notes` RLS: leadership and registrar may review, reopen, and archive. */
