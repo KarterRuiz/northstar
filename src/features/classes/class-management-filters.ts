@@ -17,7 +17,7 @@ export type ClassManagementMetricRow = {
   name: string;
   section: string | null;
   gradeLevelName: string;
-  teachers: { teacherProfileId: string; teacherLabel: string }[];
+  teachers: { staffMemberId: string; teacherLabel: string }[];
   studentEnrollmentCount: number;
 };
 
@@ -82,7 +82,7 @@ export function summarizeClassManagementMetrics(classes: ClassManagementMetricRo
   const teacherIds = new Set<string>();
   for (const c of classes) {
     for (const t of c.teachers) {
-      teacherIds.add(t.teacherProfileId);
+      teacherIds.add(t.staffMemberId);
     }
   }
   return {

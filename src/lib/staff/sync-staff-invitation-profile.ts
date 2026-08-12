@@ -103,6 +103,7 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
   // Prefer roster junction tables; fall back to invitation pending_* for legacy rows.
   let pendingClassIds = invite.pending_class_ids ?? [];
   let pendingGradeLevelIds = invite.pending_grade_level_ids ?? [];
+  let classAssignments: Array<{ classId: string; role?: string | null }> | undefined;
 
   if (invite.staff_member_id) {
     const [{ data: gradeRows }, { data: classRows }] = await Promise.all([
@@ -112,7 +113,7 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
         .eq("staff_member_id", invite.staff_member_id),
       admin
         .from("staff_member_classes")
-        .select("class_id")
+        .select("class_id, role")
         .eq("staff_member_id", invite.staff_member_id),
     ]);
     if (gradeRows?.length) {
@@ -120,6 +121,10 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
     }
     if (classRows?.length) {
       pendingClassIds = classRows.map((r) => r.class_id);
+      classAssignments = classRows.map((r) => ({
+        classId: r.class_id,
+        role: r.role,
+      }));
     }
 
     await admin
@@ -157,6 +162,18 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
         .from("staff_invitations")
         .update({ staff_member_id: byEmail.id })
         .eq("id", invite.id);
+
+      const { data: classRows } = await admin
+        .from("staff_member_classes")
+        .select("class_id, role")
+        .eq("staff_member_id", byEmail.id);
+      if (classRows?.length) {
+        pendingClassIds = classRows.map((r) => r.class_id);
+        classAssignments = classRows.map((r) => ({
+          classId: r.class_id,
+          role: r.role,
+        }));
+      }
     }
   }
 
@@ -165,6 +182,7 @@ export const syncPendingStaffInvitationProfile = cache(async (): Promise<void> =
     role: invite.role,
     pendingClassIds,
     pendingGradeLevelIds,
+    classAssignments,
   });
 
   const nowIso = new Date().toISOString();

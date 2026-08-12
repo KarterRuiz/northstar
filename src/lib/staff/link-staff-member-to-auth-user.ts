@@ -162,7 +162,7 @@ export async function linkStaffMemberToAuthUser(args: {
       .eq("staff_member_id", staffMemberId),
     admin
       .from("staff_member_classes")
-      .select("class_id")
+      .select("class_id, role")
       .eq("staff_member_id", staffMemberId),
     admin
       .from("staff_invitations")
@@ -176,8 +176,11 @@ export async function linkStaffMemberToAuthUser(args: {
 
   let pendingClassIds = (classRows ?? []).map((r) => r.class_id);
   let pendingGradeLevelIds = (gradeRows ?? []).map((r) => r.grade_level_id);
+  let classAssignments: Array<{ classId: string; role?: string | null }> | undefined =
+    (classRows ?? []).map((r) => ({ classId: r.class_id, role: r.role }));
   if (!pendingClassIds.length && pendingInvite?.pending_class_ids?.length) {
     pendingClassIds = pendingInvite.pending_class_ids;
+    classAssignments = undefined;
   }
   if (!pendingGradeLevelIds.length && pendingInvite?.pending_grade_level_ids?.length) {
     pendingGradeLevelIds = pendingInvite.pending_grade_level_ids;
@@ -225,6 +228,7 @@ export async function linkStaffMemberToAuthUser(args: {
     role: member.role,
     pendingClassIds,
     pendingGradeLevelIds,
+    classAssignments,
   });
 
   let invitationId: string | undefined;

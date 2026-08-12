@@ -64,7 +64,7 @@ export function ClassManagementForms({
           <div className="space-y-1.5">
             <CardTitle>No classes yet</CardTitle>
             <CardDescription>
-              When school years, grade levels, and teacher accounts are ready, use{" "}
+              When school years, grade levels, and staff in Teachers & Staff are ready, use{" "}
               <span className="text-foreground font-medium">+ New class</span> to create your first
               class with a homeroom teacher and optional co-teachers.
             </CardDescription>

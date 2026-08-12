@@ -412,6 +412,9 @@ export type AuditEventInput =
       action: "teacher_assigned";
       metadata: {
         classId: string;
+        /** Stable staff_members.id when assigned from the roster. */
+        staffMemberId?: string;
+        /** Legacy / live profile id when known; may equal staffMemberId for older events. */
         teacherProfileId: string;
         assignmentRole: string;
         studentId?: string;

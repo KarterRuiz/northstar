@@ -66,6 +66,15 @@ async function replaceStaffMemberAccess(
   const teacherGrades = role === "teacher" ? gradeLevelIds : [];
   const teacherClasses = role === "teacher" ? classIds : [];
 
+  // Capture roles before replace so homeroom / subject assignments survive directory edits.
+  const { data: priorClassRows } = await supabase
+    .from("staff_member_classes")
+    .select("class_id, role")
+    .eq("staff_member_id", staffMemberId);
+  const priorRoleByClass = new Map(
+    (priorClassRows ?? []).map((r) => [r.class_id, r.role ?? "co_teacher"]),
+  );
+
   const { error: delGrades } = await supabase
     .from("staff_member_grade_levels")
     .delete()
@@ -96,6 +105,7 @@ async function replaceStaffMemberAccess(
       teacherClasses.map((class_id) => ({
         staff_member_id: staffMemberId,
         class_id,
+        role: priorRoleByClass.get(class_id) ?? "co_teacher",
       })),
     );
     if (error) return { ok: false, message: "Could not save class permissions." };
@@ -120,7 +130,11 @@ async function replaceStaffMemberAccess(
         teacherClasses.map((class_id) => ({
           class_id,
           teacher_profile_id: profileId,
-          role: "co_teacher" as const,
+          role: (priorRoleByClass.get(class_id) ?? "co_teacher") as
+            | "homeroom"
+            | "co_teacher"
+            | "subject"
+            | "assistant",
         })),
       );
       if (error) return { ok: false, message: "Could not sync live class access." };
@@ -856,6 +870,14 @@ export async function replaceStaffMemberClassAccessAction(
   const gradeIds = (gradeRows ?? []).map((r) => r.grade_level_id);
   const filtered = await filterClassIdsToGrades(supabase, classIds, gradeIds);
 
+  const { data: priorClassRows } = await supabase
+    .from("staff_member_classes")
+    .select("class_id, role")
+    .eq("staff_member_id", staffMemberId);
+  const priorRoleByClass = new Map(
+    (priorClassRows ?? []).map((r) => [r.class_id, r.role ?? "co_teacher"]),
+  );
+
   const { error: delErr } = await supabase
     .from("staff_member_classes")
     .delete()
@@ -867,6 +889,7 @@ export async function replaceStaffMemberClassAccessAction(
       filtered.map((class_id) => ({
         staff_member_id: staffMemberId,
         class_id,
+        role: priorRoleByClass.get(class_id) ?? "co_teacher",
       })),
     );
     if (insErr) return { ok: false, message: "Could not save class access." };
@@ -879,7 +902,11 @@ export async function replaceStaffMemberClassAccessAction(
         filtered.map((class_id) => ({
           class_id,
           teacher_profile_id: member.profile_id!,
-          role: "co_teacher" as const,
+          role: (priorRoleByClass.get(class_id) ?? "co_teacher") as
+            | "homeroom"
+            | "co_teacher"
+            | "subject"
+            | "assistant",
         })),
       );
     }

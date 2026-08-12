@@ -2,7 +2,7 @@ import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
 } from "@/lib/errors/safe-user-message";
-import { formatStaffProfileLabel } from "@/lib/staff/format-staff-profile-label";
+import { formatStaffMemberAssignmentLabel } from "@/lib/staff/class-assignable-staff";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -15,25 +15,31 @@ import {
   summarizeClassManagementMetrics,
   type ClassManagementAppliedFilters,
 } from "./class-management-filters";
+import { loadEligibleClassStaffOptions } from "./class-staff-assignments";
 
 export type { ClassManagementAppliedFilters } from "./class-management-filters";
 
 type ClassRow = Database["public"]["Tables"]["classes"]["Row"];
 export type SchoolYearRow = Database["public"]["Tables"]["school_years"]["Row"];
 export type GradeLevelRow = Database["public"]["Tables"]["grade_levels"]["Row"];
-type ClassTeacherRow = Database["public"]["Tables"]["class_teachers"]["Row"];
 
 export type TeacherOption = {
+  /** staff_members.id */
   id: string;
   role: string;
   full_name: string | null;
   email: string | null;
+  /** Linked auth profile when activated; null for pre-activation roster rows. */
+  profile_id: string | null;
   label: string;
 };
 
 export type ClassTeacherDisplay = {
   id: string;
-  teacherProfileId: string;
+  /** staff_members.id — stable assignment identity. */
+  staffMemberId: string;
+  /** Linked profile when activated; null for pre-activation assignments. */
+  teacherProfileId: string | null;
   role: string;
   teacherRole: string;
   teacherLabel: string;
@@ -112,12 +118,7 @@ export async function loadClassManagementPageData(
         "id, school_year_id, grade_level_id, name, section, is_active, created_at, updated_at",
       )
       .order("name", { ascending: true }),
-    supabase
-      .from("profiles")
-      .select("id, role, full_name, email")
-      .eq("role", "teacher")
-      .order("full_name", { ascending: true, nullsFirst: false })
-      .order("id"),
+    loadEligibleClassStaffOptions(supabase),
   ]);
 
   if (yearsRes.error) {
@@ -132,8 +133,8 @@ export async function loadClassManagementPageData(
     logServerError("class-management.loadPage.classes", classesRes.error.message);
     return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
   }
-  if (teachersRes.error) {
-    logServerError("class-management.loadPage.teachers", teachersRes.error.message);
+  if (!teachersRes.ok) {
+    logServerError("class-management.loadPage.teachers", teachersRes.message);
     return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
   }
 
@@ -144,78 +145,86 @@ export async function loadClassManagementPageData(
   const validGradeIds = new Set(allGradeLevels.map((g) => g.id));
   const appliedFilters = parseClassManagementFilters(searchParams, validGradeIds);
   const classRows = (classesRes.data ?? []) as ClassRow[];
-  const teachers: TeacherOption[] = (teachersRes.data ?? []).map((row) => ({
-    id: row.id,
-    role: row.role ?? "teacher",
-    full_name: row.full_name ?? null,
-    email: row.email ?? null,
-    label: formatStaffProfileLabel({
-      id: row.id,
-      role: row.role,
-      full_name: row.full_name,
-      email: row.email,
-    }),
-  }));
+  const teachers: TeacherOption[] = teachersRes.teachers;
 
   const yearById = new Map(schoolYears.map((y) => [y.id, y]));
   const gradeById = new Map(allGradeLevels.map((g) => [g.id, g]));
 
-  let classTeachers: ClassTeacherRow[] = [];
+  type StaffClassRow = {
+    id: string;
+    class_id: string;
+    staff_member_id: string;
+    role: string;
+  };
+
+  let staffClassRows: StaffClassRow[] = [];
   if (classRows.length > 0) {
     const ids = classRows.map((c) => c.id);
-    const ctRes = await supabase
-      .from("class_teachers")
-      .select("id, class_id, teacher_profile_id, role")
+    const smcRes = await supabase
+      .from("staff_member_classes")
+      .select("id, class_id, staff_member_id, role")
       .in("class_id", ids);
-    if (ctRes.error) {
-      logServerError("class-management.loadClassTeachers", ctRes.error.message);
+    if (smcRes.error) {
+      logServerError("class-management.loadStaffMemberClasses", smcRes.error.message);
       return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
-    classTeachers = (ctRes.data ?? []) as ClassTeacherRow[];
+    staffClassRows = (smcRes.data ?? []) as StaffClassRow[];
   }
 
-  const teacherIds = [...new Set(classTeachers.map((t) => t.teacher_profile_id))];
-  const profileById = new Map<
+  const staffMemberIds = [...new Set(staffClassRows.map((t) => t.staff_member_id))];
+  const staffById = new Map<
     string,
-    { role: string; full_name: string | null; email: string | null }
+    {
+      role: string;
+      full_name: string | null;
+      email: string | null;
+      profile_id: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }
   >();
-  if (teacherIds.length > 0) {
-    const profRes = await supabase
-      .from("profiles")
-      .select("id, role, full_name, email")
-      .in("id", teacherIds);
-    if (profRes.error) {
-      logServerError("class-management.loadTeacherProfiles", profRes.error.message);
+  if (staffMemberIds.length > 0) {
+    const staffRes = await supabase
+      .from("staff_members")
+      .select("id, role, full_name, email, profile_id, first_name, last_name")
+      .in("id", staffMemberIds);
+    if (staffRes.error) {
+      logServerError("class-management.loadStaffMembers", staffRes.error.message);
       return { ok: false, message: GENERIC_INFORMATION_LOAD_ERROR };
     }
-    for (const row of profRes.data ?? []) {
+    for (const row of staffRes.data ?? []) {
       if (row?.id) {
-        profileById.set(row.id, {
+        staffById.set(row.id, {
           role: row.role ?? "",
           full_name: row.full_name ?? null,
           email: row.email ?? null,
+          profile_id: row.profile_id ?? null,
+          first_name: row.first_name ?? null,
+          last_name: row.last_name ?? null,
         });
       }
     }
   }
 
   const teachersByClass = new Map<string, ClassTeacherDisplay[]>();
-  for (const ct of classTeachers) {
-    const list = teachersByClass.get(ct.class_id) ?? [];
-    const prof = profileById.get(ct.teacher_profile_id);
+  for (const row of staffClassRows) {
+    const list = teachersByClass.get(row.class_id) ?? [];
+    const staff = staffById.get(row.staff_member_id);
     list.push({
-      id: ct.id,
-      teacherProfileId: ct.teacher_profile_id,
-      role: ct.role,
-      teacherRole: prof?.role ?? "",
-      teacherLabel: formatStaffProfileLabel({
-        id: ct.teacher_profile_id,
-        role: prof?.role,
-        full_name: prof?.full_name,
-        email: prof?.email,
+      id: row.id,
+      staffMemberId: row.staff_member_id,
+      teacherProfileId: staff?.profile_id ?? null,
+      role: row.role,
+      teacherRole: staff?.role ?? "",
+      teacherLabel: formatStaffMemberAssignmentLabel({
+        full_name: staff?.full_name,
+        first_name: staff?.first_name,
+        last_name: staff?.last_name,
+        email: staff?.email,
+        role: staff?.role,
       }),
     });
-    teachersByClass.set(ct.class_id, list);
+    teachersByClass.set(row.class_id, list);
   }
 
   const enrollmentCountByClassId = new Map<string, number>();

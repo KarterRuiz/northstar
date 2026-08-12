@@ -147,7 +147,7 @@ function ClassRowActions({
               disabled={pending || teachersUnavailable}
               title={
                 teachersUnavailable
-                  ? "Add at least one teacher account before assigning class teachers."
+                  ? "Add eligible staff in Teachers & Staff before assigning class teachers."
                   : undefined
               }
               onSelect={() => setEditTeachersOpen(true)}

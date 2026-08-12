@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { recordAuditEvent } from "@/lib/audit";
 import { getStaffDirectoryManagerActor } from "@/lib/auth/require-staff-directory-manager";
 import { staffDirectoryPath } from "@/features/admin/staff-directory/staff-directory-path";
+import { upsertStaffMemberClassAssignment } from "@/features/classes/class-staff-assignments";
 import { isUuid } from "@/lib/students/uuid";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -43,25 +44,33 @@ export async function assignStaffTeacherToClassAction(
     return { ok: false, message: "Class assignments apply only to teacher accounts." };
   }
 
-  const { data: existing, error: exErr } = await supabase
-    .from("class_teachers")
-    .select("id")
-    .eq("class_id", classId)
-    .eq("teacher_profile_id", teacherProfileId)
+  const { data: member, error: memberErr } = await supabase
+    .from("staff_members")
+    .select("id, profile_id, status, archived_at")
+    .eq("profile_id", teacherProfileId)
+    .is("archived_at", null)
     .maybeSingle();
-  if (exErr) return { ok: false, message: exErr.message };
-  if (existing?.id) {
-    return { ok: true, message: "Already assigned to that class." };
+  if (memberErr) return { ok: false, message: memberErr.message };
+  if (!member?.id) {
+    return {
+      ok: false,
+      message:
+        "No staff directory row is linked to this teacher. Open Teachers & Staff to repair the roster.",
+    };
+  }
+  if (member.status === "archived" || member.status === "disabled" || member.archived_at) {
+    return { ok: false, message: "Archived or deactivated staff cannot be assigned to classes." };
   }
 
-  const { error } = await supabase.from("class_teachers").insert({
-    class_id: classId,
-    teacher_profile_id: teacherProfileId,
-    role: "co_teacher",
-  });
-
-  if (error) {
-    return { ok: false, message: error.message };
+  const upserted = await upsertStaffMemberClassAssignment(
+    supabase,
+    member.id,
+    classId,
+    "co_teacher",
+    teacherProfileId,
+  );
+  if (!upserted.ok) {
+    return { ok: false, message: upserted.error };
   }
 
   await recordAuditEvent({
@@ -70,6 +79,7 @@ export async function assignStaffTeacherToClassAction(
     metadata: {
       classId,
       teacherProfileId,
+      staffMemberId: member.id,
       assignmentRole: "co_teacher",
     },
   });
@@ -103,8 +113,23 @@ export async function removeStaffTeacherFromClassAction(
   if (readErr) return { ok: false, message: readErr.message };
   if (!row) return { ok: false, message: "Assignment not found." };
 
+  const { data: member } = await supabase
+    .from("staff_members")
+    .select("id")
+    .eq("profile_id", row.teacher_profile_id)
+    .is("archived_at", null)
+    .maybeSingle();
+
   const { error: delErr } = await supabase.from("class_teachers").delete().eq("id", assignmentId);
   if (delErr) return { ok: false, message: delErr.message };
+
+  if (member?.id) {
+    await supabase
+      .from("staff_member_classes")
+      .delete()
+      .eq("staff_member_id", member.id)
+      .eq("class_id", row.class_id);
+  }
 
   await recordAuditEvent({
     action: "teacher_assigned",
@@ -113,6 +138,7 @@ export async function removeStaffTeacherFromClassAction(
       classId: row.class_id,
       teacherProfileId: row.teacher_profile_id,
       assignmentRole: "removed_from_class",
+      ...(member?.id ? { staffMemberId: member.id } : {}),
     },
   });
 

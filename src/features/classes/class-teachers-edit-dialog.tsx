@@ -28,7 +28,7 @@ import type { ClassManagementClassRow, TeacherOption } from "./load-class-manage
 
 type AdditionalLine = {
   key: string;
-  teacherProfileId: string;
+  staffMemberId: string;
   uiRole: ClassTeacherUiExtraRole;
 };
 
@@ -38,7 +38,7 @@ function newLine(): AdditionalLine {
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : String(Math.random()),
-    teacherProfileId: "",
+    staffMemberId: "",
     uiRole: "co_teacher",
   };
 }
@@ -52,11 +52,11 @@ function buildInitialForm(klass: ClassManagementClassRow): {
     .filter((t) => t.role !== CLASS_TEACHER_ROLE_HOMEROOM)
     .map((t) => ({
       key: t.id,
-      teacherProfileId: t.teacherProfileId,
+      staffMemberId: t.staffMemberId,
       uiRole: dbExtraRoleToUiRole(t.role),
     }));
   return {
-    homeroomId: homeroom?.teacherProfileId ?? "",
+    homeroomId: homeroom?.staffMemberId ?? "",
     lines,
   };
 }
@@ -96,9 +96,9 @@ export function ClassTeachersEditDialog({
 
   const optionsForRow = useMemo(() => {
     return (rowKey: string) => {
-      const selfId = lines.find((l) => l.key === rowKey)?.teacherProfileId ?? "";
+      const selfId = lines.find((l) => l.key === rowKey)?.staffMemberId ?? "";
       const otherSelected = new Set(
-        lines.filter((l) => l.key !== rowKey).map((l) => l.teacherProfileId).filter(Boolean),
+        lines.filter((l) => l.key !== rowKey).map((l) => l.staffMemberId).filter(Boolean),
       );
       return teachers.filter((t) => {
         if (homeroomId && t.id === homeroomId) return false;
@@ -110,11 +110,11 @@ export function ClassTeachersEditDialog({
 
   function validate(): string | null {
     for (const line of lines) {
-      if (!line.teacherProfileId) {
+      if (!line.staffMemberId) {
         return "Choose a teacher for each additional teacher row, or remove empty rows.";
       }
     }
-    const ids = lines.map((l) => l.teacherProfileId).filter(Boolean);
+    const ids = lines.map((l) => l.staffMemberId).filter(Boolean);
     if (new Set(ids).size !== ids.length) {
       return "Each teacher can only appear once in additional teachers.";
     }
@@ -135,8 +135,8 @@ export function ClassTeachersEditDialog({
 
     const fd = new FormData(form);
     const additionalPayload = lines
-      .filter((l) => l.teacherProfileId)
-      .map((l) => ({ teacherProfileId: l.teacherProfileId, uiRole: l.uiRole }));
+      .filter((l) => l.staffMemberId)
+      .map((l) => ({ staffMemberId: l.staffMemberId, uiRole: l.uiRole }));
     fd.set("additionalTeachers", JSON.stringify(additionalPayload));
 
     startTransition(() => {
@@ -163,7 +163,7 @@ export function ClassTeachersEditDialog({
           <DialogTitle>Edit teachers</DialogTitle>
           <DialogDescription>
             Assign a homeroom teacher and any co-teachers, subject teachers, or assistants for this
-            class.
+            class. Staff from Teachers & Staff can be scheduled before they accept their invitation.
           </DialogDescription>
         </DialogHeader>
 
@@ -185,7 +185,7 @@ export function ClassTeachersEditDialog({
             <Label htmlFor={`hr-${klass.id}`}>Homeroom teacher</Label>
             <select
               id={`hr-${klass.id}`}
-              name="homeroomTeacherProfileId"
+              name="homeroomStaffMemberId"
               value={homeroomSelectValue}
               onChange={(e) => {
                 const v = e.target.value;
@@ -234,12 +234,12 @@ export function ClassTeachersEditDialog({
                         <div className="min-w-0 flex-1 space-y-2">
                           <Label className="text-xs">Teacher</Label>
                           <select
-                            value={line.teacherProfileId}
+                            value={line.staffMemberId}
                             onChange={(e) => {
                               const v = e.target.value;
                               setLines((prev) =>
                                 prev.map((l) =>
-                                  l.key === line.key ? { ...l, teacherProfileId: v } : l,
+                                  l.key === line.key ? { ...l, staffMemberId: v } : l,
                                 ),
                               );
                             }}

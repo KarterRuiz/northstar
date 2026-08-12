@@ -13,16 +13,21 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import {
-  CLASS_TEACHER_EXTRA_ROLES,
   CLASS_TEACHER_ROLE_HOMEROOM,
   CLASS_TEACHER_UI_EXTRA_ROLE_KEYS,
-  type ClassTeacherExtraRole,
   type ClassTeacherUiExtraRole,
   uiExtraRoleToDbRole,
 } from "./constants";
 import { CLASS_HAS_RECORDS_MESSAGE } from "./constants";
 import { checkClassDeletable } from "./class-lifecycle";
-import { createClassWithTeachersBodySchema, updateClassDetailsBodySchema } from "./class-management-schemas";
+import {
+  createClassWithTeachersBodySchema,
+  updateClassDetailsBodySchema,
+} from "./class-management-schemas";
+import {
+  replaceClassStaffAssignments,
+  type ClassStaffAssignmentInput,
+} from "./class-staff-assignments";
 
 export type ClassManagementMutationState =
   | { ok: true; message?: string }
@@ -70,61 +75,6 @@ async function requireStructureManager(): Promise<
 
 function revalidateClasses(role: Role) {
   revalidatePath(`/dashboard/${role}/classes`);
-}
-
-type HomeroomResult = { ok: true } | { ok: false; error: string };
-
-async function setHomeroomForClass(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  classId: string,
-  teacherProfileId: string | null,
-): Promise<HomeroomResult> {
-  const { error: delErr } = await supabase
-    .from("class_teachers")
-    .delete()
-    .eq("class_id", classId)
-    .eq("role", CLASS_TEACHER_ROLE_HOMEROOM);
-
-  if (delErr) {
-    return { ok: false, error: delErr.message };
-  }
-
-  if (!teacherProfileId) {
-    return { ok: true };
-  }
-
-  const teacherErr = await assertTeacherProfile(supabase, teacherProfileId);
-  if (teacherErr) {
-    return teacherErr;
-  }
-
-  const { data: existing } = await supabase
-    .from("class_teachers")
-    .select("id")
-    .eq("class_id", classId)
-    .eq("teacher_profile_id", teacherProfileId)
-    .maybeSingle();
-
-  if (existing?.id) {
-    const { error: upErr } = await supabase
-      .from("class_teachers")
-      .update({ role: CLASS_TEACHER_ROLE_HOMEROOM })
-      .eq("id", existing.id);
-    if (upErr) {
-      return { ok: false, error: upErr.message };
-    }
-  } else {
-    const { error: insErr } = await supabase.from("class_teachers").insert({
-      class_id: classId,
-      teacher_profile_id: teacherProfileId,
-      role: CLASS_TEACHER_ROLE_HOMEROOM,
-    });
-    if (insErr) {
-      return { ok: false, error: insErr.message };
-    }
-  }
-
-  return { ok: true };
 }
 
 type InsertClassOk = { ok: true; classId: string };
@@ -194,27 +144,27 @@ async function rollbackNewClass(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   classId: string,
 ): Promise<void> {
+  await supabase.from("staff_member_classes").delete().eq("class_id", classId);
   await supabase.from("class_teachers").delete().eq("class_id", classId);
   await supabase.from("classes").delete().eq("id", classId);
 }
 
-async function assertTeacherProfile(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  teacherProfileId: string,
-): Promise<{ ok: false; error: string } | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", teacherProfileId)
-    .maybeSingle();
-
-  if (error) {
-    return failDb("assertTeacherProfile", error.message, "Could not verify the teacher. Try again.");
-  }
-  if (!data || data.role !== "teacher") {
-    return { ok: false, error: "Homeroom and class teachers must be users with the teacher role." };
-  }
-  return null;
+async function recordTeacherAssigned(
+  actorUserId: string,
+  classId: string,
+  staffMemberId: string,
+  assignmentRole: string,
+) {
+  await recordAuditEvent({
+    action: "teacher_assigned",
+    actorUserId,
+    metadata: {
+      classId,
+      staffMemberId,
+      teacherProfileId: staffMemberId,
+      assignmentRole,
+    },
+  });
 }
 
 export async function createClassAction(
@@ -262,7 +212,7 @@ export async function createClassWithTeachersAction(
     gradeLevelId,
     name,
     section,
-    homeroomTeacherProfileId,
+    homeroomStaffMemberId,
     additionalTeachers,
   } = parsed.data;
 
@@ -279,49 +229,34 @@ export async function createClassWithTeachersAction(
 
   const classId = inserted.classId;
 
-  const hr = await setHomeroomForClass(ctx.supabase, classId, homeroomTeacherProfileId);
-  if (!hr.ok) {
+  const assignments: ClassStaffAssignmentInput[] = [
+    { staffMemberId: homeroomStaffMemberId, role: CLASS_TEACHER_ROLE_HOMEROOM },
+    ...additionalTeachers.map((row) => ({
+      staffMemberId: row.staffMemberId,
+      role: uiExtraRoleToDbRole(row.uiRole),
+    })),
+  ];
+
+  const staffing = await replaceClassStaffAssignments(ctx.supabase, classId, assignments);
+  if (!staffing.ok) {
     await rollbackNewClass(ctx.supabase, classId);
-    return { ok: false, error: hr.error };
+    return { ok: false, error: staffing.error };
   }
 
-  await recordAuditEvent({
-    action: "teacher_assigned",
-    actorUserId: ctx.userId,
-    metadata: {
-      classId,
-      teacherProfileId: homeroomTeacherProfileId,
-      assignmentRole: CLASS_TEACHER_ROLE_HOMEROOM,
-    },
-  });
+  await recordTeacherAssigned(
+    ctx.userId,
+    classId,
+    homeroomStaffMemberId,
+    CLASS_TEACHER_ROLE_HOMEROOM,
+  );
 
   for (const row of additionalTeachers) {
-    const dbRole = uiExtraRoleToDbRole(row.uiRole);
-    const teacherErr = await assertTeacherProfile(ctx.supabase, row.teacherProfileId);
-    if (teacherErr) {
-      await rollbackNewClass(ctx.supabase, classId);
-      return teacherErr;
-    }
-
-    const { error: insErr } = await ctx.supabase.from("class_teachers").insert({
-      class_id: classId,
-      teacher_profile_id: row.teacherProfileId,
-      role: dbRole,
-    });
-    if (insErr) {
-      await rollbackNewClass(ctx.supabase, classId);
-      return { ok: false, error: insErr.message };
-    }
-
-    await recordAuditEvent({
-      action: "teacher_assigned",
-      actorUserId: ctx.userId,
-      metadata: {
-        classId,
-        teacherProfileId: row.teacherProfileId,
-        assignmentRole: dbRole,
-      },
-    });
+    await recordTeacherAssigned(
+      ctx.userId,
+      classId,
+      row.staffMemberId,
+      uiExtraRoleToDbRole(row.uiRole),
+    );
   }
 
   revalidateClasses(ctx.role);
@@ -400,7 +335,7 @@ export async function updateClassDetailsAction(
     .eq("id", classId);
 
   if (error) {
-    return failDb("createClassTeachers", error.message, "Could not assign teachers. Try again.");
+    return failDb("updateDetails", error.message, "Could not update class details. Try again.");
   }
 
   await recordAuditEvent({
@@ -418,40 +353,7 @@ export async function updateClassDetailsAction(
   return { ok: true, message: "Class details were saved." };
 }
 
-export async function assignHomeroomTeacherAction(
-  _prev: ClassManagementMutationState | undefined,
-  formData: FormData,
-): Promise<ClassManagementMutationState> {
-  const ctx = await requireStructureManager();
-  if (!ctx.ok) return ctx;
-
-  const classId = trimStr(formData.get("classId"), 64);
-  const teacherProfileId = trimStr(formData.get("teacherProfileId"), 64);
-
-  if (!isUuid(classId) || !isUuid(teacherProfileId)) {
-    return { ok: false, error: "Choose a class and a teacher." };
-  }
-
-  const hr = await setHomeroomForClass(ctx.supabase, classId, teacherProfileId);
-  if (!hr.ok) {
-    return { ok: false, error: hr.error };
-  }
-
-  await recordAuditEvent({
-    action: "teacher_assigned",
-    actorUserId: ctx.userId,
-    metadata: {
-      classId,
-      teacherProfileId,
-      assignmentRole: CLASS_TEACHER_ROLE_HOMEROOM,
-    },
-  });
-
-  revalidateClasses(ctx.role);
-  return { ok: true, message: "Homeroom teacher was assigned." };
-}
-
-type AdditionalTeacherPayload = { teacherProfileId: string; uiRole: ClassTeacherUiExtraRole };
+type AdditionalTeacherPayload = { staffMemberId: string; uiRole: ClassTeacherUiExtraRole };
 
 function parseAdditionalTeachersJson(raw: string): AdditionalTeacherPayload[] | null {
   const s = raw.trim();
@@ -466,16 +368,13 @@ function parseAdditionalTeachersJson(raw: string): AdditionalTeacherPayload[] | 
   const out: AdditionalTeacherPayload[] = [];
   for (const item of parsed) {
     if (!item || typeof item !== "object") return null;
-    const teacherProfileId = trimStr(
-      (item as { teacherProfileId?: unknown }).teacherProfileId,
-      64,
-    );
+    const staffMemberId = trimStr((item as { staffMemberId?: unknown }).staffMemberId, 64);
     const uiRoleRaw = trimStr((item as { uiRole?: unknown }).uiRole, 32);
-    if (!isUuid(teacherProfileId)) return null;
+    if (!isUuid(staffMemberId)) return null;
     if (!(CLASS_TEACHER_UI_EXTRA_ROLE_KEYS as readonly string[]).includes(uiRoleRaw)) {
       return null;
     }
-    out.push({ teacherProfileId, uiRole: uiRoleRaw as ClassTeacherUiExtraRole });
+    out.push({ staffMemberId, uiRole: uiRoleRaw as ClassTeacherUiExtraRole });
   }
   return out;
 }
@@ -488,16 +387,16 @@ export async function saveClassTeachersAction(
   if (!ctx.ok) return ctx;
 
   const classId = trimStr(formData.get("classId"), 64);
-  const homeroomRaw = trimStr(formData.get("homeroomTeacherProfileId"), 64);
+  const homeroomRaw = trimStr(formData.get("homeroomStaffMemberId"), 64);
   const additionalRaw = trimStr(formData.get("additionalTeachers"), 50_000);
 
   if (!isUuid(classId)) {
     return { ok: false, error: "Invalid class." };
   }
 
-  const homeroomTeacherProfileId =
+  const homeroomStaffMemberId =
     homeroomRaw.length === 0 || homeroomRaw === "__none__" ? null : homeroomRaw;
-  if (homeroomTeacherProfileId !== null && !isUuid(homeroomTeacherProfileId)) {
+  if (homeroomStaffMemberId !== null && !isUuid(homeroomStaffMemberId)) {
     return { ok: false, error: "Pick a valid homeroom teacher or leave unassigned." };
   }
 
@@ -509,122 +408,58 @@ export async function saveClassTeachersAction(
     return { ok: false, error: "Too many additional teacher rows." };
   }
 
-  const extraIds = additionalTeachers.map((r) => r.teacherProfileId);
+  const extraIds = additionalTeachers.map((r) => r.staffMemberId);
   const uniqueExtra = new Set(extraIds);
   if (uniqueExtra.size !== extraIds.length) {
     return { ok: false, error: "Each teacher can only appear once in additional teachers." };
   }
 
-  if (
-    homeroomTeacherProfileId &&
-    extraIds.some((id) => id === homeroomTeacherProfileId)
-  ) {
+  if (homeroomStaffMemberId && extraIds.some((id) => id === homeroomStaffMemberId)) {
     return {
       ok: false,
       error: "Remove the homeroom teacher from the additional teachers list.",
     };
   }
 
-  const { error: delExtrasErr } = await ctx.supabase
-    .from("class_teachers")
-    .delete()
-    .eq("class_id", classId)
-    .in("role", [...CLASS_TEACHER_EXTRA_ROLES]);
-
-  if (delExtrasErr) {
-    return { ok: false, error: delExtrasErr.message };
+  const assignments: ClassStaffAssignmentInput[] = [];
+  if (homeroomStaffMemberId) {
+    assignments.push({
+      staffMemberId: homeroomStaffMemberId,
+      role: CLASS_TEACHER_ROLE_HOMEROOM,
+    });
+  }
+  for (const row of additionalTeachers) {
+    assignments.push({
+      staffMemberId: row.staffMemberId,
+      role: uiExtraRoleToDbRole(row.uiRole),
+    });
   }
 
-  const hr = await setHomeroomForClass(ctx.supabase, classId, homeroomTeacherProfileId);
-  if (!hr.ok) {
-    return { ok: false, error: hr.error };
+  const staffing = await replaceClassStaffAssignments(ctx.supabase, classId, assignments);
+  if (!staffing.ok) {
+    return { ok: false, error: staffing.error };
   }
 
   for (const row of additionalTeachers) {
-    const dbRole = uiExtraRoleToDbRole(row.uiRole);
-    const teacherErr = await assertTeacherProfile(ctx.supabase, row.teacherProfileId);
-    if (teacherErr) return teacherErr;
-
-    const { error: insErr } = await ctx.supabase.from("class_teachers").insert({
-      class_id: classId,
-      teacher_profile_id: row.teacherProfileId,
-      role: dbRole,
-    });
-    if (insErr) {
-      return { ok: false, error: insErr.message };
-    }
-
-    await recordAuditEvent({
-      action: "teacher_assigned",
-      actorUserId: ctx.userId,
-      metadata: {
-        classId,
-        teacherProfileId: row.teacherProfileId,
-        assignmentRole: dbRole,
-      },
-    });
+    await recordTeacherAssigned(
+      ctx.userId,
+      classId,
+      row.staffMemberId,
+      uiExtraRoleToDbRole(row.uiRole),
+    );
   }
 
-  if (homeroomTeacherProfileId) {
-    await recordAuditEvent({
-      action: "teacher_assigned",
-      actorUserId: ctx.userId,
-      metadata: {
-        classId,
-        teacherProfileId: homeroomTeacherProfileId,
-        assignmentRole: CLASS_TEACHER_ROLE_HOMEROOM,
-      },
-    });
+  if (homeroomStaffMemberId) {
+    await recordTeacherAssigned(
+      ctx.userId,
+      classId,
+      homeroomStaffMemberId,
+      CLASS_TEACHER_ROLE_HOMEROOM,
+    );
   }
 
   revalidateClasses(ctx.role);
   return { ok: true, message: "Class teachers were saved." };
-}
-
-export async function assignAdditionalTeacherAction(
-  _prev: ClassManagementMutationState | undefined,
-  formData: FormData,
-): Promise<ClassManagementMutationState> {
-  const ctx = await requireStructureManager();
-  if (!ctx.ok) return ctx;
-
-  const classId = trimStr(formData.get("classId"), 64);
-  const teacherProfileId = trimStr(formData.get("teacherProfileId"), 64);
-  const roleRaw = trimStr(formData.get("assignmentRole"), 64) as ClassTeacherExtraRole;
-
-  if (!isUuid(classId) || !isUuid(teacherProfileId)) {
-    return { ok: false, error: "Choose a class and a teacher." };
-  }
-
-  if (!CLASS_TEACHER_EXTRA_ROLES.includes(roleRaw)) {
-    return { ok: false, error: "Pick a valid assignment role." };
-  }
-
-  const teacherErr = await assertTeacherProfile(ctx.supabase, teacherProfileId);
-  if (teacherErr) return teacherErr;
-
-  const { error } = await ctx.supabase.from("class_teachers").insert({
-    class_id: classId,
-    teacher_profile_id: teacherProfileId,
-    role: roleRaw,
-  });
-
-  if (error) {
-    return failDb("updateDetails", error.message, "Could not update class details. Try again.");
-  }
-
-  await recordAuditEvent({
-    action: "teacher_assigned",
-    actorUserId: ctx.userId,
-    metadata: {
-      classId,
-      teacherProfileId,
-      assignmentRole: roleRaw,
-    },
-  });
-
-  revalidateClasses(ctx.role);
-  return { ok: true, message: "Teacher was added to the class." };
 }
 
 async function loadClassForLifecycle(
@@ -641,7 +476,7 @@ async function loadClassForLifecycle(
     .maybeSingle();
 
   if (error) {
-    return failDb("updateTeachers", error.message, "Could not update class teachers. Try again.");
+    return failDb("loadClass", error.message, "Could not load the class. Try again.");
   }
   if (!data?.id) {
     return { ok: false, error: "Class was not found." };

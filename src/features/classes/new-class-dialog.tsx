@@ -34,12 +34,12 @@ import type { GradeLevelRow, SchoolYearRow, TeacherOption } from "./load-class-m
 const SELECT_CLASS =
   "border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
-type ExtraRow = { key: string; teacherProfileId: string; uiRole: ClassTeacherUiExtraRole };
+type ExtraRow = { key: string; staffMemberId: string; uiRole: ClassTeacherUiExtraRole };
 
 function defaultExtraRow(): ExtraRow {
   return {
     key: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Math.random()),
-    teacherProfileId: "",
+    staffMemberId: "",
     uiRole: "co_teacher",
   };
 }
@@ -63,12 +63,13 @@ export function NewClassDialog({
 
   const canCreate = schoolYears.length > 0 && gradeLevels.length > 0 && teachers.length > 0;
   const settingsHref = `/dashboard/${dashboardRole}/school-settings#academic-structure`;
+  const staffHref = `/dashboard/${dashboardRole}/teachers`;
 
   const [schoolYearId, setSchoolYearId] = React.useState("");
   const [gradeLevelId, setGradeLevelId] = React.useState("");
   const [name, setName] = React.useState("");
   const [section, setSection] = React.useState("");
-  const [homeroomTeacherProfileId, setHomeroomTeacherProfileId] = React.useState("");
+  const [homeroomStaffMemberId, setHomeroomStaffMemberId] = React.useState("");
   const [extraRows, setExtraRows] = React.useState<ExtraRow[]>([]);
 
   const resetFormForOpen = React.useCallback(() => {
@@ -76,7 +77,7 @@ export function NewClassDialog({
     setGradeLevelId(gradeLevels[0]?.id ?? "");
     setName("");
     setSection("");
-    setHomeroomTeacherProfileId(teachers[0]?.id ?? "");
+    setHomeroomStaffMemberId(teachers[0]?.id ?? "");
     setExtraRows([]);
     setClientError(null);
   }, [schoolYears, gradeLevels, teachers]);
@@ -97,11 +98,11 @@ export function NewClassDialog({
       gradeLevelId,
       name,
       section,
-      homeroomTeacherProfileId,
+      homeroomStaffMemberId,
       additionalTeachers: extraRows
-        .filter((r) => r.teacherProfileId.length > 0)
+        .filter((r) => r.staffMemberId.length > 0)
         .map((r) => ({
-          teacherProfileId: r.teacherProfileId,
+          staffMemberId: r.staffMemberId,
           uiRole: r.uiRole,
         })),
     };
@@ -134,7 +135,7 @@ export function NewClassDialog({
           className="gap-2 shadow-sm"
           title={
             !canCreate
-              ? "Add school years, grade levels, and teacher accounts before creating a class."
+              ? "Add school years, grade levels, and staff in Teachers & Staff before creating a class."
               : undefined
           }
         >
@@ -152,6 +153,10 @@ export function NewClassDialog({
                 grades are managed under{" "}
                 <a href={settingsHref} className="text-primary font-medium underline-offset-4 hover:underline">
                   School settings → Academic structure
+                </a>
+                . Teachers come from{" "}
+                <a href={staffHref} className="text-primary font-medium underline-offset-4 hover:underline">
+                  Teachers & Staff
                 </a>
                 .
               </DialogDescription>
@@ -175,7 +180,16 @@ export function NewClassDialog({
                     first.
                   </>
                 ) : (
-                  <>No teacher profiles are available yet. Add staff with the teacher role and send an invitation first.</>
+                  <>
+                    No eligible staff are available yet. Add teachers (or instructional leadership) in{" "}
+                    <a
+                      href={staffHref}
+                      className="text-primary font-medium underline-offset-4 hover:underline"
+                    >
+                      Teachers & Staff
+                    </a>
+                    . Invitation acceptance is not required to schedule them.
+                  </>
                 )}
               </p>
             ) : (
@@ -254,8 +268,8 @@ export function NewClassDialog({
                   <select
                     id="nc-homeroom"
                     className={SELECT_CLASS}
-                    value={homeroomTeacherProfileId}
-                    onChange={(e) => setHomeroomTeacherProfileId(e.target.value)}
+                    value={homeroomStaffMemberId}
+                    onChange={(e) => setHomeroomStaffMemberId(e.target.value)}
                     required
                   >
                     {teachers.map((t) => (
@@ -295,11 +309,11 @@ export function NewClassDialog({
                             <select
                               id={`nc-ex-${row.key}-t`}
                               className={SELECT_CLASS}
-                              value={row.teacherProfileId}
+                              value={row.staffMemberId}
                               onChange={(e) => {
                                 const v = e.target.value;
                                 setExtraRows((rows) =>
-                                  rows.map((r) => (r.key === row.key ? { ...r, teacherProfileId: v } : r)),
+                                  rows.map((r) => (r.key === row.key ? { ...r, staffMemberId: v } : r)),
                                 );
                               }}
                               required

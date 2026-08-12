@@ -5,7 +5,7 @@ import { CLASS_TEACHER_UI_EXTRA_ROLE_KEYS } from "./constants";
 const uiExtraRoleEnum = z.enum(CLASS_TEACHER_UI_EXTRA_ROLE_KEYS);
 
 export const additionalTeacherRowSchema = z.object({
-  teacherProfileId: z.string().uuid(),
+  staffMemberId: z.string().uuid(),
   uiRole: uiExtraRoleEnum,
 });
 
@@ -16,7 +16,7 @@ export const createClassWithTeachersBodySchema = z
     gradeLevelId: z.string().uuid(),
     name: z.string().trim().min(1, "Class name is required.").max(200),
     section: z.string().trim().min(1, "Section is required.").max(80),
-    homeroomTeacherProfileId: z.string().uuid(),
+    homeroomStaffMemberId: z.string().uuid(),
     additionalTeachers: z.array(additionalTeacherRowSchema).max(24),
     /** Accepted for validation; `classes` has no room/capacity columns yet (not persisted). */
     roomNumber: z.string().trim().max(40).optional(),
@@ -26,19 +26,19 @@ export const createClassWithTeachersBodySchema = z
     const extras = data.additionalTeachers;
     const seen = new Set<string>();
     for (let i = 0; i < extras.length; i += 1) {
-      const id = extras[i]!.teacherProfileId;
-      if (id === data.homeroomTeacherProfileId) {
+      const id = extras[i]!.staffMemberId;
+      if (id === data.homeroomStaffMemberId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Additional teachers cannot include the homeroom teacher.",
-          path: ["additionalTeachers", i, "teacherProfileId"],
+          path: ["additionalTeachers", i, "staffMemberId"],
         });
       }
       if (seen.has(id)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Each teacher can only appear once in additional teachers.",
-          path: ["additionalTeachers", i, "teacherProfileId"],
+          path: ["additionalTeachers", i, "staffMemberId"],
         });
       }
       seen.add(id);

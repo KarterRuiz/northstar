@@ -54,19 +54,19 @@ describe("Admin Classes — list matching", () => {
   const active = row({
     is_active: true,
     name: "5B",
-    teachers: [{ teacherProfileId: "t1", teacherLabel: "Ada Teacher" }],
+    teachers: [{ staffMemberId: "t1", teacherLabel: "Ada Teacher" }],
     studentEnrollmentCount: 40,
   });
   const archivedA = row({
     is_active: false,
     name: "4A",
-    teachers: [{ teacherProfileId: "t2", teacherLabel: "Bea Teacher" }],
+    teachers: [{ staffMemberId: "t2", teacherLabel: "Bea Teacher" }],
     studentEnrollmentCount: 12,
   });
   const archivedB = row({
     is_active: false,
     name: "3C",
-    teachers: [{ teacherProfileId: "t1", teacherLabel: "Ada Teacher" }],
+    teachers: [{ staffMemberId: "t1", teacherLabel: "Ada Teacher" }],
     studentEnrollmentCount: 8,
   });
 

@@ -1006,18 +1006,21 @@ export type Database = {
           id: string;
           staff_member_id: string;
           class_id: string;
+          role: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           staff_member_id: string;
           class_id: string;
+          role?: string;
           created_at?: string;
         };
         Update: {
           id?: string;
           staff_member_id?: string;
           class_id?: string;
+          role?: string;
           created_at?: string;
         };
         Relationships: [];
