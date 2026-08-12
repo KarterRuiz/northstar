@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { SetupPasswordClient } from "@/app/auth/setup-password/setup-password-client";
 import {
   AUTH_CALLBACK_PATH,
   AUTH_SETUP_PASSWORD_PATH,
-  PASSWORD_SETUP_COOKIE,
+  setupPasswordShouldRenderForm,
 } from "@/lib/auth/auth-redirect";
 import { getUser } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Set your password",
@@ -28,15 +29,24 @@ export default async function SetupPasswordPage({
     if (params.type) callback.set("type", params.type);
     redirect(`${AUTH_CALLBACK_PATH}?${callback.toString()}`);
   }
+
   const user = await getUser();
-  const cookieStore = await cookies();
-  const hasSetupCookie = cookieStore.get(PASSWORD_SETUP_COOKIE)?.value === "1";
+  const authenticated = Boolean(user);
+  const linkError = params.error === "invalid";
+
+  console.info("[auth/setup-password]", {
+    authenticatedUser: authenticated,
+    linkError,
+  });
 
   return (
     <SetupPasswordClient
-      initialHasSession={Boolean(user) && hasSetupCookie}
+      initialHasSession={setupPasswordShouldRenderForm({
+        authenticated,
+        linkError,
+      })}
       intent={params.intent ?? null}
-      linkError={params.error === "invalid"}
+      linkError={linkError && !authenticated}
     />
   );
 }

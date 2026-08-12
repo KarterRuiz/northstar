@@ -7,8 +7,6 @@ export const AUTH_SETUP_PASSWORD_PATH = "/auth/setup-password";
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 export const AUTH_FORGOT_PASSWORD_PATH = "/auth/forgot-password";
 export const LOGIN_PATH = "/login";
-/** HttpOnly flag that the auth callback sets after a valid invite/recovery exchange. */
-export const PASSWORD_SETUP_COOKIE = "ns_password_setup";
 
 const DASHBOARD_PREFIX = "/dashboard/";
 
@@ -37,6 +35,25 @@ export function isSafeInternalPath(raw: string): boolean {
 export function isPasswordSetupPath(path: string): boolean {
   const clean = stripHash(path.trim());
   return clean === AUTH_SETUP_PASSWORD_PATH || clean.startsWith(`${AUTH_SETUP_PASSWORD_PATH}?`);
+}
+
+/** True for the PKCE/implicit auth callback route (middleware must not rewrite its cookies). */
+export function isAuthCallbackPath(pathname: string): boolean {
+  const clean = stripHash(pathname.trim()).replace(/\/+$/, "");
+  return clean === AUTH_CALLBACK_PATH;
+}
+
+/**
+ * Setup-password renders the form when Auth already has a user.
+ * Do not require a local cookie or PASSWORD_RECOVERY client event.
+ */
+export function setupPasswordShouldRenderForm(input: {
+  authenticated: boolean;
+  linkError: boolean;
+}): boolean {
+  if (input.authenticated) return true;
+  if (input.linkError) return false;
+  return false;
 }
 
 /**

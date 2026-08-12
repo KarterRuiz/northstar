@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  AUTH_CALLBACK_PATH,
   AUTH_SETUP_PASSWORD_PATH,
   LOGIN_PATH,
+  isAuthCallbackPath,
   isSafeInternalPath,
   mapAuthCallbackDestination,
   sanitizeAuthNextPath,
   setupPasswordCopy,
+  setupPasswordShouldRenderForm,
 } from "@/lib/auth/auth-redirect";
 
 describe("sanitizeAuthNextPath", () => {
@@ -134,6 +137,27 @@ describe("mapAuthCallbackDestination", () => {
       exchangeOk: true,
     });
     assert.equal(dest.kind, "setup_password");
+  });
+});
+
+describe("setupPasswordShouldRenderForm", () => {
+  it("does not require ns_password_setup — getUser() is enough", () => {
+    assert.equal(
+      setupPasswordShouldRenderForm({ authenticated: true, linkError: false }),
+      true,
+    );
+  });
+
+  it("H: invalid link still points users at setup-password, not login", () => {
+    assert.equal(isAuthCallbackPath(AUTH_CALLBACK_PATH), true);
+    assert.equal(
+      mapAuthCallbackDestination({
+        type: "recovery",
+        next: LOGIN_PATH,
+        exchangeOk: false,
+      }).path.startsWith(AUTH_SETUP_PASSWORD_PATH),
+      true,
+    );
   });
 });
 

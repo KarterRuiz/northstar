@@ -55,6 +55,7 @@ export function LoginForm({ action, initialState }: Props) {
       <p className="text-center text-sm">
         <Link
           href={AUTH_FORGOT_PASSWORD_PATH}
+          prefetch={false}
           className="text-primary underline-offset-4 hover:underline"
         >
           Forgot password?

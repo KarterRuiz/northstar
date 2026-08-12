@@ -2,20 +2,18 @@
 
 import { useEffect } from "react";
 
-import { AUTH_SETUP_PASSWORD_PATH } from "@/lib/auth/auth-redirect";
+import { hashLooksLikeAuthCallback } from "@/lib/auth/auth-callback";
+import { AUTH_CALLBACK_PATH } from "@/lib/auth/auth-redirect";
 
 /**
  * Safety net for Auth emails that still land on /login with implicit tokens in the hash.
+ * Forward to /auth/callback so SSR cookies can be written before setup-password.
  */
 export function LoginRecoveryHashRedirect() {
   useEffect(() => {
     const hash = window.location.hash || "";
-    if (!hash) return;
-    if (
-      /access_token|refresh_token|type=recovery|type=invite|type=signup/.test(hash)
-    ) {
-      window.location.replace(`${AUTH_SETUP_PASSWORD_PATH}${hash}`);
-    }
+    if (!hashLooksLikeAuthCallback(hash)) return;
+    window.location.replace(`${AUTH_CALLBACK_PATH}${hash}`);
   }, []);
   return null;
 }

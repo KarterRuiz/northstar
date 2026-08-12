@@ -23,7 +23,11 @@ export function ForgotPasswordForm() {
       title="Set your NorthStar password"
       description="Enter the email for your NorthStar account. We’ll send a setup link — you won’t need your current password."
       footer={
-        <Link href={LOGIN_PATH} className="hover:text-foreground underline-offset-4 hover:underline">
+        <Link
+          href={LOGIN_PATH}
+          prefetch={false}
+          className="hover:text-foreground underline-offset-4 hover:underline"
+        >
           Return to Sign In
         </Link>
       }

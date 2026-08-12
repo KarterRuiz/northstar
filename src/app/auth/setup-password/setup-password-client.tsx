@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { NorthStarAuthShell } from "@/components/auth/northstar-auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { hashLooksLikeAuthCallback, parseImplicitAuthHash } from "@/lib/auth/auth-callback";
 import {
   AUTH_FORGOT_PASSWORD_PATH,
   LOGIN_PATH,
@@ -25,9 +26,6 @@ type Props = {
   linkError: boolean;
 };
 
-const AUTH_HASH_RE =
-  /access_token|refresh_token|type=recovery|type=invite|type=signup/;
-
 function subscribeNoop() {
   return () => {};
 }
@@ -41,7 +39,7 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
     () => window.location.hash,
     () => "",
   );
-  const hasAuthHash = AUTH_HASH_RE.test(hash);
+  const hasAuthHash = hashLooksLikeAuthCallback(hash);
   const [hashUser, setHashUser] = useState<boolean | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [state, formAction, pending] = useActionState<
@@ -56,7 +54,21 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
     void (async () => {
       try {
         const supabase = createBrowserSupabaseClient();
-        await supabase.auth.getSession();
+        const tokens = parseImplicitAuthHash(hash);
+        if (tokens) {
+          const { error } = await supabase.auth.setSession({
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+          });
+          if (error) throw error;
+          window.history.replaceState(
+            null,
+            "",
+            `${window.location.pathname}${window.location.search}`,
+          );
+        } else {
+          await supabase.auth.getSession();
+        }
         const { data } = await supabase.auth.getUser();
         if (!cancelled) setHashUser(Boolean(data.user));
       } catch {
@@ -67,7 +79,7 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
     return () => {
       cancelled = true;
     };
-  }, [initialHasSession, linkError, hasAuthHash]);
+  }, [initialHasSession, linkError, hasAuthHash, hash]);
 
   useEffect(() => {
     if (!state?.ok) return;
@@ -77,7 +89,7 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
     return () => window.clearTimeout(timer);
   }, [state, router]);
 
-  const sessionReady = (initialHasSession && !linkError) || hashUser === true;
+  const sessionReady = initialHasSession || hashUser === true;
   const checkingHash =
     !linkError &&
     !sessionReady &&
@@ -105,13 +117,19 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
         title="This setup link is no longer valid."
         description="Request a new link to finish setting up your account."
         footer={
-          <Link href={LOGIN_PATH} className="hover:text-foreground underline-offset-4 hover:underline">
+          <Link
+            href={LOGIN_PATH}
+            prefetch={false}
+            className="hover:text-foreground underline-offset-4 hover:underline"
+          >
             Return to Sign In
           </Link>
         }
       >
         <Button asChild className="w-full">
-          <Link href={AUTH_FORGOT_PASSWORD_PATH}>Request a new setup link</Link>
+          <Link href={AUTH_FORGOT_PASSWORD_PATH} prefetch={false}>
+            Request a new setup link
+          </Link>
         </Button>
       </NorthStarAuthShell>
     );
@@ -122,7 +140,11 @@ export function SetupPasswordClient({ initialHasSession, intent, linkError }: Pr
       title={copy.title}
       description={copy.subtitle}
       footer={
-        <Link href={LOGIN_PATH} className="hover:text-foreground underline-offset-4 hover:underline">
+        <Link
+          href={LOGIN_PATH}
+          prefetch={false}
+          className="hover:text-foreground underline-offset-4 hover:underline"
+        >
           Return to Sign In
         </Link>
       }
