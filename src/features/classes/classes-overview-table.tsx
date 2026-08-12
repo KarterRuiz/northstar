@@ -35,6 +35,7 @@ import {
   restoreClassAction,
   type ClassManagementMutationState,
 } from "./class-management-actions";
+import { classDisplayName } from "./class-management-filters";
 import { ClassEditDetailsDialog } from "./class-edit-details-dialog";
 import { ClassTeachersEditDialog } from "./class-teachers-edit-dialog";
 import {
@@ -67,9 +68,8 @@ function MutationBanner({ state }: { state: ClassManagementMutationState | undef
 }
 
 function classRowLabel(c: ClassManagementClassRow): string {
-  const sec = c.section?.trim();
-  const base = c.name.trim() || "Class";
-  return `${c.schoolYearLabel} · ${c.gradeLevelName} · ${base}${sec ? ` ${sec}` : ""}`;
+  const base = classDisplayName(c);
+  return `${c.schoolYearLabel} · ${c.gradeLevelName} · ${base}`;
 }
 
 function homeroomLabel(c: ClassManagementClassRow): string | null {
@@ -111,6 +111,7 @@ function ClassRowActions({
   const pending = archivePending || restorePending || deletePending;
   const lastState = deleteState ?? restoreState ?? archiveState;
   const teachersUnavailable = teachers.length === 0;
+  const displayName = classDisplayName(klass);
 
   useEffect(() => {
     if (lastState) onMutation(lastState);
@@ -199,10 +200,10 @@ function ClassRowActions({
       <Dialog open={confirm === "archive"} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Archive class?</DialogTitle>
+            <DialogTitle>Archive {displayName}?</DialogTitle>
             <DialogDescription>
-              This hides the class from active workflows while preserving historical academic
-              records.
+              This class will be removed from active class views but its historical records will
+              remain available.
             </DialogDescription>
           </DialogHeader>
           <p className="text-muted-foreground text-sm">{classRowLabel(klass)}</p>
@@ -223,9 +224,10 @@ function ClassRowActions({
       <Dialog open={confirm === "restore"} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Restore class?</DialogTitle>
+            <DialogTitle>Restore {displayName}?</DialogTitle>
             <DialogDescription>
-              The class will appear again in active teacher dashboards and roster workflows.
+              The class will return to the active Classes list. Existing enrollment, teacher
+              assignments, and academic history stay intact.
             </DialogDescription>
           </DialogHeader>
           <p className="text-muted-foreground text-sm">{classRowLabel(klass)}</p>
@@ -281,11 +283,14 @@ export function ClassesOverviewTable({
   teachers,
   schoolYears,
   gradeLevels,
+  emphasizeSchoolYear = false,
 }: {
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
   schoolYears: SchoolYearRow[];
   gradeLevels: GradeLevelRow[];
+  /** When viewing archive, always surface school year under the class name. */
+  emphasizeSchoolYear?: boolean;
 }) {
   const [banner, setBanner] = useState<ClassManagementMutationState | undefined>();
 
@@ -299,6 +304,9 @@ export function ClassesOverviewTable({
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="min-w-[12rem]">Class</TableHead>
               <TableHead className="whitespace-nowrap">Grade</TableHead>
+              {emphasizeSchoolYear ? (
+                <TableHead className="whitespace-nowrap">School year</TableHead>
+              ) : null}
               <TableHead className="min-w-[10rem]">Homeroom teacher</TableHead>
               <TableHead className="min-w-[9rem]">Other teachers</TableHead>
               <TableHead className="text-right tabular-nums">Students</TableHead>
@@ -310,15 +318,27 @@ export function ClassesOverviewTable({
             {classes.map((c) => {
               const hr = homeroomLabel(c);
               const additional = c.teachers.filter((t) => t.role !== CLASS_TEACHER_ROLE_HOMEROOM);
+              const section = c.section?.trim();
               return (
                 <TableRow key={c.id}>
                   <TableCell>
                     <div className="font-medium">{c.name.trim() || "—"}</div>
                     <div className="text-muted-foreground text-xs">
-                      {c.section?.trim() ? `Section ${c.section}` : c.schoolYearLabel}
+                      {emphasizeSchoolYear
+                        ? section
+                          ? `Section ${section}`
+                          : null
+                        : section
+                          ? `Section ${section}`
+                          : c.schoolYearLabel}
                     </div>
                   </TableCell>
                   <TableCell>{c.gradeLevelName}</TableCell>
+                  {emphasizeSchoolYear ? (
+                    <TableCell className="whitespace-nowrap text-sm">
+                      {c.schoolYearLabel}
+                    </TableCell>
+                  ) : null}
                   <TableCell className="text-muted-foreground text-sm">
                     {hr ?? "—"}
                   </TableCell>

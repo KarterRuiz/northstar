@@ -13,6 +13,7 @@
     "test:follow-up": "npx tsx --test src/features/follow-up/follow-up.test.ts",
     "test:calendar": "npx tsx --test src/features/calendar/calendar.test.ts",
     "test:teacher-home": "npx tsx --test src/features/teacher/dashboard/teacher-home-summaries.test.ts src/features/teacher/dashboard/teacher-daily-note.test.ts",
+    "test:class-management": "npx tsx --test src/features/classes/class-management-filters.test.ts",
     "test:class-workspace": "npx tsx --test src/features/teacher/class-workspace/class-workspace.test.ts src/features/teacher/class-workspace/class-roster.test.ts src/features/teacher/class-workspace/class-attendance.test.ts src/features/teacher/class-workspace/class-support.test.ts src/features/teacher/class-workspace/class-records.test.ts",
     "test:staff-invite": "npx tsx --test src/lib/staff/staff-invite-email.test.ts",
     "test:auth": "npx tsx --test src/lib/auth/auth-redirect.test.ts src/lib/auth/auth-callback.test.ts src/lib/auth/password-policy.test.ts src/lib/supabase/env.test.ts src/lib/staff/staff-invite-email.test.ts"
@@ -53,6 +54,7 @@
     "eslint-config-next": "16.2.6",
     "puppeteer": "^24.8.2",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5"
   }
 }

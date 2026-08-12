@@ -1,33 +1,27 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import {
+  buildClassesHref,
+  type ClassManagementAppliedFilters,
+  type ClassManagementStatusFilter,
+} from "./class-management-filters";
 import { ClassesOverviewTable } from "./classes-overview-table";
 import type {
-  ClassManagementAppliedFilters,
   ClassManagementClassRow,
   ClassManagementGradeFilterOption,
+  ClassManagementOperationalSummary,
   GradeLevelRow,
   SchoolYearRow,
   TeacherOption,
 } from "./load-class-management-data";
-
-function buildClassesHref(
-  basePath: string,
-  next: ClassManagementAppliedFilters,
-): string {
-  const sp = new URLSearchParams();
-  if (next.q.trim()) sp.set("q", next.q.trim());
-  if (next.status !== "all") sp.set("status", next.status);
-  if (next.gradeLevelId) sp.set("grade", next.gradeLevelId);
-  const qs = sp.toString();
-  return qs ? `${basePath}?${qs}` : basePath;
-}
 
 function ClassesSearchInput({
   appliedQ,
@@ -84,6 +78,7 @@ export function ClassManagementClassesOverview({
   gradeLevels,
   gradeFilterOptions,
   appliedFilters,
+  operationalSummary,
   headerAction,
 }: {
   role: string;
@@ -93,6 +88,7 @@ export function ClassManagementClassesOverview({
   gradeLevels: GradeLevelRow[];
   gradeFilterOptions: ClassManagementGradeFilterOption[];
   appliedFilters: ClassManagementAppliedFilters;
+  operationalSummary: ClassManagementOperationalSummary;
   headerAction?: ReactNode;
 }) {
   const router = useRouter();
@@ -100,23 +96,7 @@ export function ClassManagementClassesOverview({
   const [pending, startTransition] = useTransition();
 
   const basePath = `/dashboard/${role}/classes`;
-
-  const metrics = useMemo(() => {
-    const teacherIds = new Set<string>();
-    for (const c of classes) {
-      for (const t of c.teachers) {
-        teacherIds.add(t.teacherProfileId);
-      }
-    }
-    const archivedInView = classes.filter((c) => !c.is_active).length;
-    const totalStudents = classes.reduce((sum, c) => sum + c.studentEnrollmentCount, 0);
-    return {
-      totalClasses: classes.length,
-      totalTeachers: teacherIds.size,
-      totalStudents,
-      archivedInView,
-    };
-  }, [classes]);
+  const viewingArchive = appliedFilters.status === "archived";
 
   const navigateFilters = useCallback(
     (next: ClassManagementAppliedFilters) => {
@@ -129,8 +109,8 @@ export function ClassManagementClassesOverview({
   );
 
   const onStatusChange = (value: string) => {
-    const status =
-      value === "active" || value === "archived" ? value : ("all" as const);
+    const status: ClassManagementStatusFilter =
+      value === "archived" ? "archived" : "active";
     navigateFilters({ ...appliedFilters, status });
   };
 
@@ -139,51 +119,45 @@ export function ClassManagementClassesOverview({
     navigateFilters({ ...appliedFilters, gradeLevelId });
   };
 
+  const hasClearableFilters =
+    Boolean(appliedFilters.q.trim()) ||
+    Boolean(appliedFilters.gradeLevelId) ||
+    viewingArchive;
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Classes</CardDescription>
             <CardTitle className="text-3xl font-semibold tabular-nums">
-              {metrics.totalClasses}
+              {operationalSummary.classCount}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground text-xs">
-            Matching your current filters
+            Active classes
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Teachers</CardDescription>
             <CardTitle className="text-3xl font-semibold tabular-nums">
-              {metrics.totalTeachers}
+              {operationalSummary.teacherCount}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground text-xs">
-            Unique staff assigned to these classes
+            Unique staff assigned to active classes
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Students</CardDescription>
             <CardTitle className="text-3xl font-semibold tabular-nums">
-              {metrics.totalStudents}
+              {operationalSummary.studentCount}
             </CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground text-xs">
-            Active enrollments in these classes
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Archived in view</CardDescription>
-            <CardTitle className="text-3xl font-semibold tabular-nums">
-              {metrics.archivedInView}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-muted-foreground text-xs">
-            Inactive classes among filtered results
+            Active enrollments in active classes
           </CardContent>
         </Card>
       </div>
@@ -192,13 +166,18 @@ export function ClassManagementClassesOverview({
         <CardHeader className="border-border space-y-1 border-b bg-muted/30 pb-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-xl">Classes overview</CardTitle>
+              <CardTitle className="text-xl">
+                {viewingArchive ? "Archived classes" : "Classes overview"}
+              </CardTitle>
               <CardDescription>
-                Enrollment counts, assigned teachers, and archive status. Use row actions to edit
-                details, manage teachers, or archive a class.
+                {viewingArchive
+                  ? "Historical classes preserved for records. Restore a class to return it to the active list."
+                  : "Enrollment counts, assigned teachers, and class details. Archive a class to remove it from active views while keeping history."}
               </CardDescription>
             </div>
-            {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+            {headerAction && !viewingArchive ? (
+              <div className="shrink-0">{headerAction}</div>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
@@ -211,18 +190,23 @@ export function ClassManagementClassesOverview({
             />
             <div className="grid w-full gap-4 sm:grid-cols-2 lg:w-auto lg:min-w-[20rem]">
               <div className="space-y-2">
-                <Label htmlFor="classes-status">Status</Label>
-                <select
-                  id="classes-status"
-                  className="border-input bg-background ring-offset-background focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50"
+                <Label htmlFor="classes-status">View</Label>
+                <Tabs
                   value={appliedFilters.status}
-                  disabled={pending}
-                  onChange={(e) => onStatusChange(e.target.value)}
+                  onValueChange={onStatusChange}
                 >
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="archived">Archived</option>
-                </select>
+                  <TabsList className="grid h-10 w-full grid-cols-2" id="classes-status">
+                    <TabsTrigger value="active" disabled={pending}>
+                      Active
+                    </TabsTrigger>
+                    <TabsTrigger value="archived" disabled={pending}>
+                      Archived
+                      {operationalSummary.archivedClassCount > 0
+                        ? ` (${operationalSummary.archivedClassCount})`
+                        : ""}
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="classes-grade">Grade level</Label>
@@ -244,22 +228,31 @@ export function ClassManagementClassesOverview({
             </div>
           </div>
 
-          {currentSearch.toString() ? (
+          {hasClearableFilters || currentSearch.toString() ? (
             <p className="text-muted-foreground text-xs">
               <button
                 type="button"
                 className="text-primary font-medium underline-offset-4 hover:underline"
                 disabled={pending}
-                onClick={() => navigateFilters({ q: "", status: "all", gradeLevelId: null })}
+                onClick={() =>
+                  navigateFilters({ q: "", status: "active", gradeLevelId: null })
+                }
               >
-                Clear filters
+                {viewingArchive ? "Back to active classes" : "Clear filters"}
               </button>
             </p>
           ) : null}
 
           {classes.length === 0 ? (
             <p className="text-muted-foreground border-muted rounded-md border border-dashed px-4 py-10 text-center text-sm">
-              No classes match these filters. Try clearing search or widening status and grade.
+              {viewingArchive
+                ? operationalSummary.archivedClassCount === 0
+                  ? "No archived classes yet."
+                  : "No archived classes match these filters."
+                : operationalSummary.classCount === 0 &&
+                    operationalSummary.archivedClassCount > 0
+                  ? "No active classes. Switch to Archived to view historical classes."
+                  : "No classes match these filters. Try clearing search or widening grade."}
             </p>
           ) : (
             <ClassesOverviewTable
@@ -267,6 +260,7 @@ export function ClassManagementClassesOverview({
               teachers={teachers}
               schoolYears={schoolYears}
               gradeLevels={gradeLevels}
+              emphasizeSchoolYear={viewingArchive}
             />
           )}
         </CardContent>

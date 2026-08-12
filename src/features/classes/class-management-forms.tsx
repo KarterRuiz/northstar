@@ -18,6 +18,7 @@ import type {
   ClassManagementAppliedFilters,
   ClassManagementClassRow,
   ClassManagementGradeFilterOption,
+  ClassManagementOperationalSummary,
   GradeLevelRow,
   SchoolYearRow,
   TeacherOption,
@@ -32,16 +33,18 @@ export function ClassManagementForms({
   gradeFilterOptions,
   appliedFilters,
   totalClassCount,
+  operationalSummary,
 }: {
   dashboardRole: Role;
   schoolYears: SchoolYearRow[];
   gradeLevels: GradeLevelRow[];
-  /** Filtered list for the overview table and summary metrics. */
+  /** Filtered list for the overview table. */
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
   gradeFilterOptions: ClassManagementGradeFilterOption[];
   appliedFilters: ClassManagementAppliedFilters;
   totalClassCount: number;
+  operationalSummary: ClassManagementOperationalSummary;
 }) {
   const settingsAcademicHref = `/dashboard/${dashboardRole}/school-settings#academic-structure`;
 
@@ -93,6 +96,7 @@ export function ClassManagementForms({
       gradeLevels={gradeLevels}
       gradeFilterOptions={gradeFilterOptions}
       appliedFilters={appliedFilters}
+      operationalSummary={operationalSummary}
       headerAction={newClassDialog}
     />
   );

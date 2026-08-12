@@ -50,6 +50,7 @@ async function ClassManagementBody({
       gradeFilterOptions={data.gradeFilterOptions}
       appliedFilters={data.appliedFilters}
       totalClassCount={data.totalClassCount}
+      operationalSummary={data.operationalSummary}
     />
   );
 }

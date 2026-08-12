@@ -8,6 +8,16 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import type { Database } from "@/types/database.types";
 
+import {
+  classMatchesFilters,
+  operationalFiltersFrom,
+  parseClassManagementFilters,
+  summarizeClassManagementMetrics,
+  type ClassManagementAppliedFilters,
+} from "./class-management-filters";
+
+export type { ClassManagementAppliedFilters } from "./class-management-filters";
+
 type ClassRow = Database["public"]["Tables"]["classes"]["Row"];
 export type SchoolYearRow = Database["public"]["Tables"]["school_years"]["Row"];
 export type GradeLevelRow = Database["public"]["Tables"]["grade_levels"]["Row"];
@@ -44,67 +54,20 @@ export type ClassManagementGradeFilterOption = {
   name: string;
 };
 
-export type ClassManagementAppliedFilters = {
-  q: string;
-  status: "all" | "active" | "archived";
-  gradeLevelId: string | null;
+export type ClassManagementOperationalSummary = {
+  classCount: number;
+  teacherCount: number;
+  studentCount: number;
+  /** Total archived classes (unfiltered by search/grade) — for archive access affordance. */
+  archivedClassCount: number;
 };
-
-function firstParam(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) return value[0];
-  return value;
-}
-
-function parseClassManagementFilters(
-  raw: Record<string, string | string[] | undefined> | undefined,
-  validGradeIds: Set<string>,
-): ClassManagementAppliedFilters {
-  const qRaw = firstParam(raw?.q) ?? "";
-  const q = qRaw.trim().slice(0, 200);
-
-  const statusRaw = (firstParam(raw?.status) ?? "all").toLowerCase();
-  const status: ClassManagementAppliedFilters["status"] =
-    statusRaw === "active" || statusRaw === "archived" ? statusRaw : "all";
-
-  const gradeRaw = firstParam(raw?.grade)?.trim() ?? "";
-  const gradeLevelId = validGradeIds.has(gradeRaw) ? gradeRaw : null;
-
-  return { q, status, gradeLevelId };
-}
-
-function classMatchesFilters(
-  row: ClassManagementClassRow,
-  filters: ClassManagementAppliedFilters,
-): boolean {
-  if (filters.status === "active" && !row.is_active) return false;
-  if (filters.status === "archived" && row.is_active) return false;
-
-  if (filters.gradeLevelId && row.grade_level_id !== filters.gradeLevelId) {
-    return false;
-  }
-
-  if (!filters.q) return true;
-
-  const needle = filters.q.toLowerCase();
-  const teacherText = row.teachers.map((t) => t.teacherLabel).join(" ").toLowerCase();
-  const hay = [
-    row.name,
-    row.section ?? "",
-    row.gradeLevelName,
-    teacherText,
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return hay.includes(needle);
-}
 
 export type ClassManagementPageData =
   | {
       ok: true;
       schoolYears: SchoolYearRow[];
       gradeLevels: GradeLevelRow[];
-      /** Filtered classes for the overview table and summary metrics. */
+      /** Filtered classes for the overview table (default: active only). */
       classes: ClassManagementClassRow[];
       teachers: TeacherOption[];
       /** Distinct grade levels that appear on any class (for filter dropdown). */
@@ -112,6 +75,8 @@ export type ClassManagementPageData =
       appliedFilters: ClassManagementAppliedFilters;
       /** Count of all classes before URL filters (search / status / grade). */
       totalClassCount: number;
+      /** Active-class operational pulse (ignores archive status filter). */
+      operationalSummary: ClassManagementOperationalSummary;
     }
   | { ok: false; message: string };
 
@@ -304,6 +269,12 @@ export async function loadClassManagementPageData(
 
   const classes = classesUnfiltered.filter((c) => classMatchesFilters(c, appliedFilters));
 
+  const operationalRows = classesUnfiltered.filter((c) =>
+    classMatchesFilters(c, operationalFiltersFrom(appliedFilters)),
+  );
+  const metrics = summarizeClassManagementMetrics(operationalRows);
+  const archivedClassCount = classesUnfiltered.filter((c) => !c.is_active).length;
+
   return {
     ok: true,
     schoolYears,
@@ -313,5 +284,9 @@ export async function loadClassManagementPageData(
     gradeFilterOptions,
     appliedFilters,
     totalClassCount: classesUnfiltered.length,
+    operationalSummary: {
+      ...metrics,
+      archivedClassCount,
+    },
   };
 }
