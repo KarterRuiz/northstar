@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getProfileRole, getUser } from "@/lib/auth/session";
+import { teacherClassMutationDeniedMessage } from "@/lib/auth/teacher-class-mutation-gate";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { Database } from "@/types/database.types";
@@ -16,6 +17,11 @@ export type TeacherClassGate =
     }
   | { ok: false; message: string };
 
+/**
+ * Operational mutation gate for assigned teachers.
+ * Primary enforcement: SQL `teacher_is_assigned_to_class` (requires active class).
+ * Defense in depth: reject when a visible class row is archived (stale tab / deep link).
+ */
 export async function requireTeacherAssignedToClass(
   classId: string,
 ): Promise<TeacherClassGate> {
@@ -37,15 +43,31 @@ export async function requireTeacherAssignedToClass(
   }
 
   const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase.rpc("teacher_is_assigned_to_class", {
-    p_class_id: classId,
-  });
+  const [assignedRes, classRes] = await Promise.all([
+    supabase.rpc("teacher_is_assigned_to_class", {
+      p_class_id: classId,
+    }),
+    supabase.from("classes").select("is_active").eq("id", classId).maybeSingle(),
+  ]);
 
-  if (error) {
-    return { ok: false, message: error.message };
+  if (assignedRes.error) {
+    return { ok: false, message: assignedRes.error.message };
   }
-  if (data !== true) {
-    return { ok: false, message: "You are not assigned to this class." };
+
+  // Defense in depth: never allow writes when the visible class is archived,
+  // even if the RPC were misconfigured. Prefer a clean product error.
+  if (classRes.data?.is_active === false) {
+    return {
+      ok: false,
+      message: teacherClassMutationDeniedMessage({ classIsArchived: true }),
+    };
+  }
+
+  if (assignedRes.data !== true) {
+    return {
+      ok: false,
+      message: teacherClassMutationDeniedMessage({ classIsArchived: false }),
+    };
   }
 
   return { ok: true, userId: user.id, supabase };

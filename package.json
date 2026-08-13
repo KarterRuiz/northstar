@@ -16,7 +16,7 @@
     "test:class-management": "npx tsx --test src/features/classes/class-management-filters.test.ts src/features/classes/class-staff-assignments.test.ts src/features/classes/class-data-center/class-data-center.test.ts",
     "test:class-workspace": "npx tsx --test src/features/teacher/class-workspace/class-workspace.test.ts src/features/teacher/class-workspace/class-roster.test.ts src/features/teacher/class-workspace/class-attendance.test.ts src/features/teacher/class-workspace/class-support.test.ts src/features/teacher/class-workspace/class-records.test.ts",
     "test:staff-invite": "npx tsx --test src/lib/staff/staff-invite-email.test.ts",
-    "test:auth": "npx tsx --test src/lib/auth/auth-redirect.test.ts src/lib/auth/auth-callback.test.ts src/lib/auth/password-policy.test.ts src/lib/supabase/env.test.ts src/lib/staff/staff-invite-email.test.ts"
+    "test:auth": "npx tsx --test src/lib/auth/auth-redirect.test.ts src/lib/auth/auth-callback.test.ts src/lib/auth/password-policy.test.ts src/lib/auth/teacher-class-mutation-gate.test.ts src/lib/supabase/env.test.ts src/lib/staff/staff-invite-email.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
