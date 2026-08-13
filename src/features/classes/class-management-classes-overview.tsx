@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import type { Role } from "@/config/roles";
 import {
   buildClassesHref,
   type ClassManagementAppliedFilters,
@@ -81,7 +82,7 @@ export function ClassManagementClassesOverview({
   operationalSummary,
   headerAction,
 }: {
-  role: string;
+  role: Role;
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
   schoolYears: SchoolYearRow[];
@@ -261,6 +262,7 @@ export function ClassManagementClassesOverview({
               schoolYears={schoolYears}
               gradeLevels={gradeLevels}
               emphasizeSchoolYear={viewingArchive}
+              dashboardRole={role}
             />
           )}
         </CardContent>

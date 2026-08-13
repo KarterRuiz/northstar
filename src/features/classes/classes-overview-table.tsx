@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 
@@ -28,6 +29,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+import type { Role } from "@/config/roles";
+import { classDataCenterPath } from "@/features/classes/class-data-center/constants";
 
 import {
   archiveClassAction,
@@ -284,6 +288,7 @@ export function ClassesOverviewTable({
   schoolYears,
   gradeLevels,
   emphasizeSchoolYear = false,
+  dashboardRole,
 }: {
   classes: ClassManagementClassRow[];
   teachers: TeacherOption[];
@@ -291,6 +296,7 @@ export function ClassesOverviewTable({
   gradeLevels: GradeLevelRow[];
   /** When viewing archive, always surface school year under the class name. */
   emphasizeSchoolYear?: boolean;
+  dashboardRole: Role;
 }) {
   const [banner, setBanner] = useState<ClassManagementMutationState | undefined>();
 
@@ -322,7 +328,14 @@ export function ClassesOverviewTable({
               return (
                 <TableRow key={c.id}>
                   <TableCell>
-                    <div className="font-medium">{c.name.trim() || "—"}</div>
+                    <div className="font-medium">
+                      <Link
+                        href={classDataCenterPath(dashboardRole, c.id, "overview")}
+                        className="text-primary underline-offset-4 hover:underline focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none"
+                      >
+                        {c.name.trim() || "—"}
+                      </Link>
+                    </div>
                     <div className="text-muted-foreground text-xs">
                       {emphasizeSchoolYear
                         ? section

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
-import { isRole, type Role } from "@/config/roles";
+import { canManageSchoolStructure, isRole, type Role } from "@/config/roles";
+import { classDataCenterPath } from "@/features/classes/class-data-center/constants";
 import { TeacherGradebookPageContent } from "@/features/teacher/gradebook/gradebook-page";
 import { isUuid } from "@/lib/students/uuid";
 
@@ -14,12 +15,17 @@ type PageProps = {
   params: Promise<{ role: string; classId: string }>;
 };
 
-export default async function TeacherGradebookRoute({ params }: PageProps) {
+export default async function ClassGradebookRoute({ params }: PageProps) {
   const { role: roleParam, classId } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
-  if (role !== "teacher") notFound();
   if (!isUuid(classId)) notFound();
 
-  return <TeacherGradebookPageContent classId={classId} embedded />;
+  if (role === "teacher") {
+    return <TeacherGradebookPageContent classId={classId} embedded />;
+  }
+  if (canManageSchoolStructure(role)) {
+    redirect(classDataCenterPath(role, classId, "academics"));
+  }
+  notFound();
 }

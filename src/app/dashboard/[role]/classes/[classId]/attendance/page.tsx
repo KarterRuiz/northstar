@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { isRole, type Role } from "@/config/roles";
+import { canManageSchoolStructure, isRole, type Role } from "@/config/roles";
+import { ClassDataCenterAttendanceTab } from "@/features/classes/class-data-center/class-attendance-tab";
 import { ClassAttendanceTab } from "@/features/teacher/class-workspace/class-attendance-tab";
 import { isUuid } from "@/lib/students/uuid";
 
@@ -19,17 +20,17 @@ function pickString(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
-export default async function TeacherClassAttendancePage({
-  params,
-  searchParams,
-}: PageProps) {
+export default async function ClassAttendancePage({ params, searchParams }: PageProps) {
   const { role: roleParam, classId } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
-  if (role !== "teacher") notFound();
   if (!isUuid(classId)) notFound();
 
   const dateRaw = pickString((await searchParams).date) ?? null;
 
-  return <ClassAttendanceTab classId={classId} attendanceDate={dateRaw} />;
+  if (role === "teacher") {
+    return <ClassAttendanceTab classId={classId} attendanceDate={dateRaw} />;
+  }
+  if (!canManageSchoolStructure(role)) notFound();
+  return <ClassDataCenterAttendanceTab classId={classId} attendanceDate={dateRaw} />;
 }

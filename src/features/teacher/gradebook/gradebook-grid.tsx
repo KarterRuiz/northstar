@@ -93,6 +93,7 @@ type GradebookGridProps = {
   assignmentsForCalc: AssignmentForCalc[];
   categoriesForCalc: CategoryForCalc[];
   busy: boolean;
+  readOnly?: boolean;
   cellSaveState: Record<string, "saving" | "saved" | "error">;
   onCellSave: (
     assignmentId: string,
@@ -190,6 +191,7 @@ type StudentGridRowProps = {
   termFilter: string;
   cellSaveState: Record<string, "saving" | "saved" | "error">;
   onCellSave: GradebookGridProps["onCellSave"];
+  readOnly?: boolean;
 };
 
 function StudentGridRow({
@@ -203,6 +205,7 @@ function StudentGridRow({
   termFilter,
   cellSaveState,
   onCellSave,
+  readOnly = false,
 }: StudentGridRowProps) {
   const scoreMap = React.useMemo(
     () => buildScoreMap(studentScores),
@@ -274,6 +277,22 @@ function StudentGridRow({
         if (col.kind === "assignment") {
           const key = scoreKey(col.assignment.id, student.studentId);
           const colIdx = assignmentColIndex.get(col.assignment.id) ?? 0;
+          const score = scoresByAssignment.get(col.assignment.id);
+          if (readOnly) {
+            return (
+              <td key={key} className={cn(SCORE_CELL, SCORE_COL)}>
+                {score?.status === "missing" ? (
+                  <span className="text-muted-foreground">Missing</span>
+                ) : score?.pointsEarned != null ? (
+                  <span className="tabular-nums">{score.pointsEarned}</span>
+                ) : score ? (
+                  <span className="text-muted-foreground capitalize">{score.status}</span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </td>
+            );
+          }
           return (
             <GradebookScoreCellEditor
               key={key}
@@ -282,7 +301,7 @@ function StudentGridRow({
               studentId={student.studentId}
               rowIndex={rowIndex}
               colIndex={colIdx}
-              score={scoresByAssignment.get(col.assignment.id)}
+              score={score}
               saveState={cellSaveState[key]}
               onSave={(draft) => onCellSave(col.assignment.id, student.studentId, draft)}
             />
@@ -347,7 +366,8 @@ function studentGridRowPropsEqual(
     prev.categoriesForCalc === next.categoriesForCalc &&
     prev.termFilter === next.termFilter &&
     prev.cellSaveState === next.cellSaveState &&
-    prev.onCellSave === next.onCellSave
+    prev.onCellSave === next.onCellSave &&
+    prev.readOnly === next.readOnly
   );
 }
 
@@ -408,6 +428,7 @@ function GradebookAssignmentColumnHeader({
   assignment,
   categoryName,
   busy,
+  readOnly = false,
   onEditAssignment,
   onDeleteAssignment,
   onOpenScoreEntry,
@@ -415,6 +436,7 @@ function GradebookAssignmentColumnHeader({
   assignment: GradebookAssignmentRow;
   categoryName: string;
   busy: boolean;
+  readOnly?: boolean;
   onEditAssignment: (a: GradebookAssignmentRow) => void;
   onDeleteAssignment: (a: GradebookAssignmentRow) => void;
   onOpenScoreEntry: (assignmentId: string) => void;
@@ -478,6 +500,7 @@ function GradebookAssignmentColumnHeader({
             </dl>
           </TooltipContent>
         </Tooltip>
+        {!readOnly ? (
         <GradebookAssignmentMenu
           assignment={assignment}
           disabled={busy}
@@ -486,6 +509,7 @@ function GradebookAssignmentColumnHeader({
           onDelete={onDeleteAssignment}
           onEnterScores={onOpenScoreEntry}
         />
+        ) : null}
       </div>
     </th>
   );
@@ -501,6 +525,7 @@ function GradebookGridTable({
   categoriesForCalc,
   termFilter,
   busy,
+  readOnly = false,
   cellSaveState,
   onCellSave,
   onOpenScoreEntry,
@@ -517,6 +542,7 @@ function GradebookGridTable({
   categoriesForCalc: CategoryForCalc[];
   termFilter: string;
   busy: boolean;
+  readOnly?: boolean;
   cellSaveState: Record<string, "saving" | "saved" | "error">;
   onCellSave: GradebookGridProps["onCellSave"];
   onOpenScoreEntry: (assignmentId: string) => void;
@@ -533,9 +559,9 @@ function GradebookGridTable({
           className="text-muted-foreground border-border/70 bg-muted/20 rounded-md border border-dashed px-3 py-2 text-xs"
           role="status"
         >
-          No scores entered yet. Click a cell to select, double-click or Enter to
-          edit, or paste a column from Excel. Use Enter scores in the toolbar for bulk
-          entry.
+          {readOnly
+            ? "No scores recorded yet for these assignments."
+            : "No scores entered yet. Click a cell to select, double-click or Enter to edit, or paste a column from Excel. Use Enter scores in the toolbar for bulk entry."}
         </p>
       ) : null}
 
@@ -574,6 +600,7 @@ function GradebookGridTable({
                         assignment={col.assignment}
                         categoryName={col.categoryName}
                         busy={busy}
+                        readOnly={readOnly}
                         onEditAssignment={onEditAssignment}
                         onDeleteAssignment={onDeleteAssignment}
                         onOpenScoreEntry={onOpenScoreEntry}
@@ -619,6 +646,7 @@ function GradebookGridTable({
                   termFilter={termFilter}
                   cellSaveState={cellSaveState}
                   onCellSave={onCellSave}
+                  readOnly={readOnly}
                 />
               ))}
             </tbody>
@@ -639,6 +667,7 @@ export function GradebookGrid({
   assignmentsForCalc,
   categoriesForCalc,
   busy,
+  readOnly = false,
   cellSaveState,
   onCellSave,
   onOpenScoreEntry,
@@ -691,9 +720,9 @@ export function GradebookGrid({
   return (
     <GradebookGridNavigationProvider
       rowCount={students.length}
-      editableColumns={editableColumns}
+      editableColumns={readOnly ? [] : editableColumns}
       scrollContainerRef={scrollContainerRef}
-      disabled={busy}
+      disabled={busy || readOnly}
       onColumnPaste={onColumnPaste}
       onPasteRejected={onPasteRejected}
     >
@@ -707,6 +736,7 @@ export function GradebookGrid({
         categoriesForCalc={categoriesForCalc}
         termFilter={termFilter}
         busy={busy}
+        readOnly={readOnly}
         cellSaveState={cellSaveState}
         onCellSave={onCellSave}
         onOpenScoreEntry={onOpenScoreEntry}

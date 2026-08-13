@@ -78,6 +78,8 @@ const BASE = "/dashboard/teacher";
 
 type GradebookViewProps = {
   embedded?: boolean;
+  /** Leadership Class Data Center uses read-only — hides editors and never calls save actions. */
+  mode?: "edit" | "read-only";
   classId: string;
   className: string;
   classSubtitle: string;
@@ -117,6 +119,7 @@ function assignmentInputFromRow(assignment: GradebookAssignmentRow): AssignmentI
 
 export function GradebookView({
   embedded = false,
+  mode = "edit",
   classId,
   className: classDisplayName,
   classSubtitle,
@@ -127,6 +130,7 @@ export function GradebookView({
   scores: initialScores,
   students,
 }: GradebookViewProps) {
+  const readOnly = mode === "read-only";
   const [activeTab, setActiveTab] = React.useState<GradebookTab>("grid");
   const [localCategories, setLocalCategories] =
     React.useState(initialCategories);
@@ -303,6 +307,7 @@ export function GradebookView({
     draftByStudent: Record<string, ScoreDraftRow>,
     studentIds?: string[],
   ): Promise<boolean> => {
+    if (readOnly) return false;
     const targets = studentIds ?? students.map((s) => s.studentId);
     const rows = targets.map((studentId) => {
       const draft = draftByStudent[studentId] ?? {
@@ -417,6 +422,7 @@ export function GradebookView({
     studentId: string,
     draft: ScoreDraftRow,
   ) => {
+    if (readOnly) return;
     const key = scoreKey(assignmentId, studentId);
     const scrollPos = captureScrollPositions();
     setCellSaveState((s) => ({ ...s, [key]: "saving" }));
@@ -461,7 +467,7 @@ export function GradebookView({
         });
       }, 1500);
     });
-  }, [classId, restoreScrollPositions]);
+  }, [classId, restoreScrollPositions, readOnly]);
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -707,6 +713,8 @@ export function GradebookView({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
+          {!readOnly ? (
+            <>
           <Button
             type="button"
             size="sm"
@@ -744,6 +752,12 @@ export function GradebookView({
           >
             Enter scores
           </Button>
+            </>
+          ) : (
+            <p className="text-muted-foreground text-xs" role="status">
+              Read-only review — teachers enter and update grades in their gradebook.
+            </p>
+          )}
         </div>
       </header>
 
@@ -797,7 +811,8 @@ export function GradebookView({
             termFilter={termFilter}
             assignmentsForCalc={assignmentsForCalc}
             categoriesForCalc={categoriesForCalc}
-            busy={busy}
+            busy={busy || readOnly}
+            readOnly={readOnly}
             cellSaveState={cellSaveState}
             onCellSave={handleCellSave}
             onColumnPaste={handleColumnPaste}
@@ -809,6 +824,7 @@ export function GradebookView({
         </TabsContent>
 
         <TabsContent value="assignments" className="mt-3">
+          {!readOnly ? (
           <div className="mb-3 flex justify-end">
             <Button
               type="button"
@@ -820,6 +836,7 @@ export function GradebookView({
               New assignment
             </Button>
           </div>
+          ) : null}
           {filteredAssignments.length > 0 ? (
             <div className="overflow-x-auto overscroll-x-contain rounded-lg border">
             <Table className="min-w-[40rem]">
@@ -846,6 +863,7 @@ export function GradebookView({
                       </TableCell>
                       <TableCell>{a.term ?? "—"}</TableCell>
                       <TableCell className="text-right">
+                        {!readOnly ? (
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             type="button"
@@ -874,6 +892,9 @@ export function GradebookView({
                             onEnterScores={openScoreEntry}
                           />
                         </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">View only</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -919,6 +940,8 @@ export function GradebookView({
                       <TableCell className="font-medium">{cat.name}</TableCell>
                       <TableCell>{cat.weightPercent}%</TableCell>
                       <TableCell className="text-right">
+                        {!readOnly ? (
+                          <>
                         <Button
                           type="button"
                           variant="ghost"
@@ -937,6 +960,10 @@ export function GradebookView({
                         >
                           Delete
                         </Button>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">View only</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -946,6 +973,7 @@ export function GradebookView({
           ) : (
             <p className="text-muted-foreground text-sm">No categories yet.</p>
           )}
+          {!readOnly ? (
           <Button
             type="button"
             size="sm"
@@ -958,6 +986,7 @@ export function GradebookView({
           >
             Add category
           </Button>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="reports" className="mt-3">

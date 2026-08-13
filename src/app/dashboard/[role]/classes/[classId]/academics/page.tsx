@@ -2,27 +2,24 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { canManageSchoolStructure, isRole, type Role } from "@/config/roles";
-import { ClassDataCenterSupportTab } from "@/features/classes/class-data-center/class-support-tab";
-import { ClassSupportTab } from "@/features/teacher/class-workspace/class-support-tab";
+import { ClassDataCenterAcademicsTab } from "@/features/classes/class-data-center/class-academics-tab";
 import { isUuid } from "@/lib/students/uuid";
 
 export const metadata: Metadata = {
-  title: "Behavior & Support",
+  title: "Class academics",
+  description: "Read-only academic review for this class.",
 };
 
 type PageProps = {
   params: Promise<{ role: string; classId: string }>;
 };
 
-export default async function ClassSupportPage({ params }: PageProps) {
+export default async function ClassAcademicsPage({ params }: PageProps) {
   const { role: roleParam, classId } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
+  if (!canManageSchoolStructure(role)) notFound();
   if (!isUuid(classId)) notFound();
 
-  if (role === "teacher") {
-    return <ClassSupportTab classId={classId} />;
-  }
-  if (!canManageSchoolStructure(role)) notFound();
-  return <ClassDataCenterSupportTab classId={classId} />;
+  return <ClassDataCenterAcademicsTab classId={classId} />;
 }

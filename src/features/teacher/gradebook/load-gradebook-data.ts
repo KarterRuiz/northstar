@@ -4,10 +4,14 @@ import { cache } from "react";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { canManageSchoolStructure } from "@/config/roles";
+import { getProfileRole, getUser } from "@/lib/auth/session";
 import { REPORT_CARD_TERMS } from "@/lib/report-cards/constants";
 import { requireTeacherAssignedToClass } from "@/lib/auth/teacher-class-access";
 import { isStudentId } from "@/lib/students/uuid";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
+import { isUuid } from "@/lib/students/uuid";
 
 import type { ScoreStatus } from "./calculations";
 import type { TransitionNoteStatus } from "./report-readiness";
@@ -200,9 +204,35 @@ export const loadGradebookPageData = cache(async function loadGradebookPageData(
 ): Promise<GradebookPageData> {
   const gate = await requireTeacherAssignedToClass(classId);
   if (!gate.ok) return gate;
+  return loadGradebookPageDataWithClient(gate.supabase, classId);
+});
 
-  const { supabase } = gate;
+/**
+ * Leadership read path for Class Data Center Academics.
+ * Does not grant mutation rights — gradebook actions still require teacher assignment.
+ */
+export const loadGradebookPageDataForLeadership = cache(
+  async function loadGradebookPageDataForLeadership(
+    classId: string,
+  ): Promise<GradebookPageData> {
+    if (!isUuid(classId)) {
+      return { ok: false, message: "Class not found." };
+    }
+    const user = await getUser();
+    if (!user) return { ok: false, message: "You must be signed in." };
+    const role = await getProfileRole(user.id);
+    if (!role || !canManageSchoolStructure(role)) {
+      return { ok: false, message: "Only school leadership can review class academics." };
+    }
+    const supabase = await createServerSupabaseClient();
+    return loadGradebookPageDataWithClient(supabase, classId);
+  },
+);
 
+async function loadGradebookPageDataWithClient(
+  supabase: SupabaseClient<Database>,
+  classId: string,
+): Promise<GradebookPageData> {
   const { data: klass, error: classError } = await supabase
     .from("classes")
     .select(
@@ -343,4 +373,5 @@ export const loadGradebookPageData = cache(async function loadGradebookPageData(
     scores,
     students,
   };
-});
+}
+
