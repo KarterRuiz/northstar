@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +21,11 @@ import {
 import { ListEmptyState } from "@/components/workspace/list-empty-state";
 import { cn } from "@/lib/utils";
 import { matchesClassRosterSearch } from "@/features/teacher/class-workspace/class-roster";
+import { ClassManageRosterDialog } from "./class-manage-roster-dialog";
+import { ClassRosterStudentActions } from "./class-roster-student-actions";
 import { studentCountLabel } from "./class-data-center-copy";
 import {
-  classDataCenterManageRosterHref,
+  classDataCenterAddStudentHref,
   classDataCenterRosterImportHref,
 } from "./constants";
 import type { ClassDataCenterRosterStudent } from "./load-class-data-center-students";
@@ -38,17 +41,38 @@ const FILTERS: { id: FilterId; label: string }[] = [
 
 export function ClassDataCenterStudentsTable({
   role,
+  classId,
+  classTitle,
   students,
   showStudentNumber,
   canManageRoster,
 }: {
   role: Role;
+  classId: string;
+  classTitle: string;
   students: ClassDataCenterRosterStudent[];
   showStudentNumber: boolean;
   canManageRoster: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterId>("all");
+  const [manageForcedOpen, setManageForcedOpen] = useState(false);
+
+  const manageFromUrl = canManageRoster && searchParams.get("manage") === "1";
+  const manageOpen = manageFromUrl || manageForcedOpen;
+
+  function handleManageOpenChange(open: boolean) {
+    setManageForcedOpen(open);
+    if (!open && manageFromUrl) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("manage");
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }
 
   const visible = useMemo(() => {
     return students.filter((row) => {
@@ -71,11 +95,20 @@ export function ClassDataCenterStudentsTable({
         </div>
         {canManageRoster ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="min-h-11 lg:min-h-8">
-              <Link href={classDataCenterManageRosterHref(role)}>Add student</Link>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-11 lg:min-h-8"
+              onClick={() => setManageForcedOpen(true)}
+            >
+              Manage roster
             </Button>
             <Button asChild variant="outline" size="sm" className="min-h-11 lg:min-h-8">
-              <Link href={classDataCenterRosterImportHref(role)}>Import roster</Link>
+              <Link href={classDataCenterAddStudentHref(role, classId)}>Add student</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="min-h-11 lg:min-h-8">
+              <Link href={classDataCenterRosterImportHref(role, classId)}>Import roster</Link>
             </Button>
           </div>
         ) : null}
@@ -125,7 +158,7 @@ export function ClassDataCenterStudentsTable({
         <div className="bg-card border-border/80 rounded-xl border px-4 py-6 shadow-sm">
           <ListEmptyState
             title="No students in this class yet"
-            description="Use Add student or Import roster to enroll students in this class."
+            description="Use Manage roster, Add student, or Import roster to enroll students in this class."
           />
         </div>
       ) : visible.length === 0 ? (
@@ -148,6 +181,11 @@ export function ClassDataCenterStudentsTable({
                 <TableHead>Academics</TableHead>
                 <TableHead>Support</TableHead>
                 <TableHead>Records</TableHead>
+                {canManageRoster ? (
+                  <TableHead className="w-12">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -169,12 +207,33 @@ export function ClassDataCenterStudentsTable({
                   <TableCell className="relative z-[2] text-sm">{row.academicsLabel}</TableCell>
                   <TableCell className="relative z-[2] text-sm">{row.supportLabel}</TableCell>
                   <TableCell className="relative z-[2] text-sm">{row.recordsLabel}</TableCell>
+                  {canManageRoster ? (
+                    <TableCell className="relative z-[3] py-1.5 text-right">
+                      <ClassRosterStudentActions
+                        role={role}
+                        classId={classId}
+                        classTitle={classTitle}
+                        student={row}
+                      />
+                    </TableCell>
+                  ) : null}
                 </DirectoryClickableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       )}
+
+      {canManageRoster ? (
+        <ClassManageRosterDialog
+          open={manageOpen}
+          onOpenChange={handleManageOpenChange}
+          role={role}
+          classId={classId}
+          classTitle={classTitle}
+          students={students}
+        />
+      ) : null}
     </div>
   );
 }

@@ -141,7 +141,9 @@ export function ClassDataCenterActions({
             Edit class
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <a href={classDataCenterManageRosterHref(context.role)}>Manage roster</a>
+            <a href={classDataCenterManageRosterHref(context.role, context.id)}>
+              Manage roster
+            </a>
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={pending || !context.isActive || teachersUnavailable}

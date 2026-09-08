@@ -95,11 +95,21 @@ export function classDataCenterAttendanceWorkspaceHref(
   return `/dashboard/admin/attendance?${p.toString()}`;
 }
 
-export function classDataCenterManageRosterHref(role: Role): string {
+export function classDataCenterManageRosterHref(role: Role, classId?: string): string {
+  if (classId) {
+    return `${classDataCenterPath(role, classId, "students")}?manage=1`;
+  }
   return `/dashboard/${role}/students/new`;
 }
 
-export function classDataCenterRosterImportHref(role: Role): string {
+export function classDataCenterAddStudentHref(role: Role, classId: string): string {
+  return `/dashboard/${role}/students/new?classId=${encodeURIComponent(classId)}`;
+}
+
+export function classDataCenterRosterImportHref(role: Role, classId?: string): string {
+  if (classId) {
+    return `/dashboard/${role}/students/import?classId=${encodeURIComponent(classId)}`;
+  }
   return `/dashboard/${role}/students/import`;
 }
 

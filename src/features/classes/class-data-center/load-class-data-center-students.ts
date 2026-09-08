@@ -31,6 +31,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { academicsPulseLabel } from "./class-data-center-copy";
 import { classDataCenterStudentProfileHref } from "./constants";
 import { loadClassDataCenterContext } from "./load-class-data-center-context";
+import { assessStudentsDeleteSafety } from "@/features/students/assess-student-delete-safety";
 
 type StudentEmbed = {
   id: string;
@@ -54,22 +55,28 @@ function chunkIds(ids: string[]): string[][] {
 
 export type ClassDataCenterRosterStudent = {
   studentId: string;
+  enrollmentId: string;
   displayName: string;
   studentNumber: string | null;
   searchText: string;
   href: string;
+  editHref: string;
   attendanceLabel: string;
   academicsLabel: string;
   supportLabel: string;
   needsSupport: boolean;
   recordsLabel: string;
   recordsRemaining: boolean;
+  /** True when hard-delete is safe (no dependent history). Leadership roster only. */
+  canHardDelete: boolean;
 };
 
 export type ClassDataCenterStudentsData =
   | {
       ok: true;
       role: Role;
+      classId: string;
+      classTitle: string;
       students: ClassDataCenterRosterStudent[];
       showStudentNumber: boolean;
     }
@@ -84,7 +91,8 @@ export const loadClassDataCenterStudents = cache(
     }
 
     const supabase = await createServerSupabaseClient();
-    const { role, schoolYearLabel, isCurrentYear, studentCount } = ctx.context;
+    const { role, schoolYearLabel, isCurrentYear, studentCount, title: classTitle } =
+      ctx.context;
     const todayIso = schoolTodayIso();
     const yearRes = await loadCurrentSchoolYear(supabase);
     if (!yearRes.ok) return { ok: false, message: yearRes.error };
@@ -94,6 +102,7 @@ export const loadClassDataCenterStudents = cache(
       .from("student_enrollments")
       .select(
         `
+        id,
         student_id,
         students!inner (
           id, first_name, last_name, preferred_name, external_id
@@ -110,16 +119,18 @@ export const loadClassDataCenterStudents = cache(
 
     type Draft = {
       studentId: string;
+      enrollmentId: string;
       displayName: string;
       studentNumber: string | null;
       searchText: string;
     };
     const drafts: Draft[] = [];
     for (const raw of enRows ?? []) {
+      const enrollmentId = (raw as { id?: string }).id;
       const student = unwrapOne(
         (raw as { students: StudentEmbed | StudentEmbed[] | null }).students,
       );
-      if (!student?.id) continue;
+      if (!student?.id || !enrollmentId) continue;
       const firstName = student.first_name ?? "";
       const lastName = student.last_name ?? "";
       const preferredName = student.preferred_name?.trim() || null;
@@ -131,6 +142,7 @@ export const loadClassDataCenterStudents = cache(
       });
       drafts.push({
         studentId: student.id,
+        enrollmentId,
         displayName,
         studentNumber,
         searchText: classRosterSearchText({
@@ -147,35 +159,50 @@ export const loadClassDataCenterStudents = cache(
     );
 
     if (drafts.length === 0) {
-      return { ok: true, role, students: [], showStudentNumber: false };
+      return {
+        ok: true,
+        role,
+        classId,
+        classTitle,
+        students: [],
+        showStudentNumber: false,
+      };
     }
 
     const studentIds = drafts.map((d) => d.studentId);
 
-    const [signalsByKey, attendanceRes, assignRes, termsRes, files] = await Promise.all([
-      loadCheckInSignals(
-        studentIds.map((studentId) => ({ studentId, classId, schoolYearLabel: yearLabel })),
-      ),
-      supabase
-        .from("attendance_records")
-        .select("student_id")
-        .eq("class_id", classId)
-        .eq("attendance_date", todayIso),
-      supabase.from("gradebook_assignments").select("id").eq("class_id", classId),
-      yearRes.year && isCurrentYear
-        ? supabase
-            .from("terms")
-            .select("code, name, starts_on, ends_on")
-            .eq("school_year_id", yearRes.year.id)
-            .order("starts_on", { ascending: true })
-        : Promise.resolve({
-            data: [] as { code: string; name: string; starts_on: string; ends_on: string }[],
-            error: null,
-          }),
-      isCurrentYear
-        ? loadReportCardFiles(supabase, studentIds, yearRes.year?.label ?? null)
-        : Promise.resolve([] as ReportingFileInput[]),
-    ]);
+    const [signalsByKey, attendanceRes, assignRes, termsRes, files, deleteSafety] =
+      await Promise.all([
+        loadCheckInSignals(
+          studentIds.map((studentId) => ({ studentId, classId, schoolYearLabel: yearLabel })),
+        ),
+        supabase
+          .from("attendance_records")
+          .select("student_id")
+          .eq("class_id", classId)
+          .eq("attendance_date", todayIso),
+        supabase.from("gradebook_assignments").select("id").eq("class_id", classId),
+        yearRes.year && isCurrentYear
+          ? supabase
+              .from("terms")
+              .select("code, name, starts_on, ends_on")
+              .eq("school_year_id", yearRes.year.id)
+              .order("starts_on", { ascending: true })
+          : Promise.resolve({
+              data: [] as { code: string; name: string; starts_on: string; ends_on: string }[],
+              error: null,
+            }),
+        isCurrentYear
+          ? loadReportCardFiles(supabase, studentIds, yearRes.year?.label ?? null)
+          : Promise.resolve([] as ReportingFileInput[]),
+        assessStudentsDeleteSafety(supabase, studentIds).catch((err: unknown) => {
+          logServerError(
+            "class-data-center-students.deleteSafety",
+            err instanceof Error ? err.message : "unknown",
+          );
+          return null;
+        }),
+      ]);
 
     const markedToday = new Set((attendanceRes.data ?? []).map((r) => r.student_id));
     const classAttendance = attendanceStatusForClass({
@@ -228,10 +255,12 @@ export const loadClassDataCenterStudents = cache(
           : "Remaining";
       return {
         studentId: row.studentId,
+        enrollmentId: row.enrollmentId,
         displayName: row.displayName,
         studentNumber: row.studentNumber,
         searchText: row.searchText,
         href: classDataCenterStudentProfileHref(role, row.studentId),
+        editHref: `/dashboard/${role}/students/${row.studentId}/edit`,
         attendanceLabel:
           classAttendance === "not_submitted" && !marked
             ? "Not marked"
@@ -246,6 +275,8 @@ export const loadClassDataCenterStudents = cache(
         needsSupport: reason != null,
         recordsLabel,
         recordsRemaining: reportingStarted && !completeSet.has(row.studentId),
+        // Prefer archive when safety could not be assessed.
+        canHardDelete: deleteSafety?.get(row.studentId)?.canHardDelete === true,
       };
     });
 
@@ -259,6 +290,8 @@ export const loadClassDataCenterStudents = cache(
     return {
       ok: true,
       role,
+      classId,
+      classTitle,
       students,
       showStudentNumber: classRosterHasStudentNumbers(students),
     };

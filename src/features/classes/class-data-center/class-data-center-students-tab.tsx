@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+
 import { canManageClassEnrollment } from "@/config/roles";
 
 import { ClassDataCenterStudentsTable } from "./class-students-tab";
@@ -18,11 +20,15 @@ export async function ClassDataCenterStudentsTab({ classId }: { classId: string 
   }
 
   return (
-    <ClassDataCenterStudentsTable
-      role={data.role}
-      students={data.students}
-      showStudentNumber={data.showStudentNumber}
-      canManageRoster={canManageClassEnrollment(data.role)}
-    />
+    <Suspense fallback={null}>
+      <ClassDataCenterStudentsTable
+        role={data.role}
+        classId={data.classId}
+        classTitle={data.classTitle}
+        students={data.students}
+        showStudentNumber={data.showStudentNumber}
+        canManageRoster={canManageClassEnrollment(data.role)}
+      />
+    </Suspense>
   );
 }

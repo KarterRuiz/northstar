@@ -146,6 +146,8 @@ export async function createStudentAction(
 
   revalidatePath(`/dashboard/${auth.role}/students`, "page");
   revalidatePath(`/dashboard/${auth.role}/students/${created.studentId}`, "layout");
+  revalidatePath(`/dashboard/${auth.role}/classes/${classId}`, "layout");
+  revalidatePath(`/dashboard/${auth.role}/classes/${classId}/students`, "page");
 
   return {
     ok: true,
@@ -310,6 +312,18 @@ export async function updateStudentAction(
 
   revalidatePath(`/dashboard/${auth.role}/students`, "page");
   revalidatePath(`/dashboard/${auth.role}/students/${studentId}`, "layout");
+  revalidatePath(`/dashboard/${auth.role}/classes/${classId}`, "layout");
+  revalidatePath(`/dashboard/${auth.role}/classes/${classId}/students`, "page");
+  if (beforeEnrollment && beforeEnrollment.class_id !== classId) {
+    revalidatePath(
+      `/dashboard/${auth.role}/classes/${beforeEnrollment.class_id}`,
+      "layout",
+    );
+    revalidatePath(
+      `/dashboard/${auth.role}/classes/${beforeEnrollment.class_id}/students`,
+      "page",
+    );
+  }
 
   return { ok: true, message: "Student updated.", studentId };
 }

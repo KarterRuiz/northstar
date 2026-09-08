@@ -18,6 +18,10 @@ export const auditActions = [
   "student_profile_viewed",
   "student_created",
   "student_updated",
+  "student_removed_from_class",
+  "student_archived",
+  "student_deleted",
+  "student_enrolled_in_class",
   "teacher_student_created",
   "teacher_roster_bulk_created",
   "roster_imported",
@@ -117,6 +121,36 @@ export type AuditEventInput =
         studentId: string;
         /** Short human-readable summary, e.g. comma-separated changed field keys. */
         changedSummary: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "student_removed_from_class";
+      metadata: {
+        studentId: string;
+        classId: string;
+        enrollmentId: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "student_archived";
+      metadata: {
+        studentId: string;
+        withdrawnEnrollmentIds: string[];
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "student_deleted";
+      metadata: {
+        studentId: string;
+        displayName: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "student_enrolled_in_class";
+      metadata: {
+        studentId: string;
+        classId: string;
+        enrollmentId: string | null;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {

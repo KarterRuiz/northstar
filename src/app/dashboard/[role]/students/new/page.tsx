@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { assertStudentDirectoryAccess } from "@/features/students/profile/access";
 import { loadStudentFormClassOptions } from "@/features/students/student-form-queries";
 import { StudentForm } from "@/features/students/student-form";
+import { isUuid } from "@/lib/students/uuid";
 
 export const metadata: Metadata = {
   title: "New student",
@@ -15,16 +16,33 @@ export const metadata: Metadata = {
 
 type PageProps = {
   params: Promise<{ role: string }>;
+  searchParams: Promise<{ classId?: string }>;
 };
 
-export default async function NewStudentPage({ params }: PageProps) {
+export default async function NewStudentPage({ params, searchParams }: PageProps) {
   const { role: roleParam } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
   assertStudentDirectoryAccess(role);
   if (!canManageStudents(role)) notFound();
 
+  const { classId: classIdRaw } = await searchParams;
+  const preferredClassId =
+    classIdRaw && isUuid(classIdRaw) ? classIdRaw : undefined;
+
   const classesLoad = await loadStudentFormClassOptions();
+  const initialClassId =
+    preferredClassId &&
+    classesLoad.ok &&
+    classesLoad.classes.some((c) => c.id === preferredClassId)
+      ? preferredClassId
+      : classesLoad.ok
+        ? (classesLoad.classes[0]?.id ?? "")
+        : "";
+
+  const backHref = preferredClassId
+    ? `/dashboard/${role}/classes/${preferredClassId}/students`
+    : `/dashboard/${role}/students`;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
@@ -42,7 +60,7 @@ export default async function NewStudentPage({ params }: PageProps) {
           </p>
         </div>
         <Button variant="outline" size="sm" className="shrink-0" asChild>
-          <Link href={`/dashboard/${role}/students`}>Directory</Link>
+          <Link href={backHref}>{preferredClassId ? "Back to class" : "Directory"}</Link>
         </Button>
       </div>
 
@@ -51,7 +69,12 @@ export default async function NewStudentPage({ params }: PageProps) {
           {classesLoad.message}
         </p>
       ) : (
-        <StudentForm dashboardRole={role} mode="create" classOptions={classesLoad.classes} />
+        <StudentForm
+          dashboardRole={role}
+          mode="create"
+          classOptions={classesLoad.classes}
+          initialClassId={initialClassId}
+        />
       )}
     </div>
   );
