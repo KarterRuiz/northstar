@@ -107,6 +107,11 @@ export function getAuthEmailRedirectToLogin(): string {
 /**
  * Canonical `redirectTo` for `inviteUserByEmail` and `resetPasswordForEmail`.
  * Goes through `/auth/callback` (PKCE exchange) then `/auth/setup-password`.
+ *
+ * Supabase dashboard requirement (Invite user template must match Reset password):
+ * the CTA must use `{{ .ConfirmationURL }}` (not bare `{{ .SiteURL }}`). Otherwise
+ * the invite button opens the public homepage and never establishes an invite session.
+ * Allowlist must include this exact callback origin path (query string optional via `**`).
  */
 export function getAuthEmailRedirectToSetupPassword(): string {
   const next = encodeURIComponent(AUTH_SETUP_PASSWORD_PATH);

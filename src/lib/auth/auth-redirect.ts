@@ -81,6 +81,28 @@ export function sanitizeAuthNextPath(
   return fallback;
 }
 
+/**
+ * When an Auth email (invite or recovery) lands on `/`, `/login`, or setup-password
+ * with a PKCE `code`, forward into `/auth/callback` so the session is established
+ * before `/auth/setup-password`. Never keep the user on the public homepage.
+ */
+export function buildAuthEmailCallbackHandoffPath(input: {
+  code?: string | null;
+  type?: string | null;
+  next?: string | null;
+}): string | null {
+  const code = input.code?.trim();
+  if (!code) return null;
+
+  const params = new URLSearchParams({
+    code,
+    next: sanitizeAuthNextPath(input.next, AUTH_SETUP_PASSWORD_PATH),
+  });
+  const type = input.type?.trim();
+  if (type) params.set("type", type);
+  return `${AUTH_CALLBACK_PATH}?${params.toString()}`;
+}
+
 export type AuthCallbackIntent = "setup" | "recovery" | "generic";
 
 export type AuthCallbackDestination =

@@ -13,10 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { siteConfig } from "@/config/site";
-import {
-  AUTH_CALLBACK_PATH,
-  AUTH_SETUP_PASSWORD_PATH,
-} from "@/lib/auth/auth-redirect";
+import { buildAuthEmailCallbackHandoffPath } from "@/lib/auth/auth-redirect";
 
 import { LoginForm } from "./login-form";
 
@@ -34,13 +31,9 @@ export default async function LoginPage({
   }>;
 }) {
   const params = await searchParams;
-  if (params.code) {
-    const callback = new URLSearchParams({
-      code: params.code,
-      next: AUTH_SETUP_PASSWORD_PATH,
-    });
-    if (params.type) callback.set("type", params.type);
-    redirect(`${AUTH_CALLBACK_PATH}?${callback.toString()}`);
+  const handoff = buildAuthEmailCallbackHandoffPath(params);
+  if (handoff) {
+    redirect(handoff);
   }
   const profileError = params.error === "profile";
   const deactivatedError = params.error === "deactivated";

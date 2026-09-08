@@ -64,4 +64,15 @@ describe("canonical auth email redirects", () => {
     assert.match(urls.redirectTo, /\/auth\/callback/);
     assert.match(urls.redirectTo, /setup-password/);
   });
+
+  it("I: individual + bulk invite redirectTo matches recovery (never / or localhost)", () => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://northstar-roan.vercel.app";
+    const inviteRedirect = getAuthEmailRedirectToSetupPassword();
+    assert.equal(
+      inviteRedirect,
+      "https://northstar-roan.vercel.app/auth/callback?next=%2Fauth%2Fsetup-password",
+    );
+    assert.notEqual(new URL(inviteRedirect).pathname, "/");
+    assert.doesNotMatch(inviteRedirect, /localhost/i);
+  });
 });

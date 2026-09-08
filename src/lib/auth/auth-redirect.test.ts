@@ -5,6 +5,7 @@ import {
   AUTH_CALLBACK_PATH,
   AUTH_SETUP_PASSWORD_PATH,
   LOGIN_PATH,
+  buildAuthEmailCallbackHandoffPath,
   isAuthCallbackPath,
   isSafeInternalPath,
   mapAuthCallbackDestination,
@@ -57,6 +58,41 @@ describe("sanitizeAuthNextPath", () => {
   it("isSafeInternalPath rejects protocol-relative URLs", () => {
     assert.equal(isSafeInternalPath("//example.com"), false);
     assert.equal(isSafeInternalPath("/login"), true);
+  });
+});
+
+describe("buildAuthEmailCallbackHandoffPath", () => {
+  it("A: invite PKCE landing on public / forwards to callback → setup-password", () => {
+    const path = buildAuthEmailCallbackHandoffPath({
+      code: "invite-pkce-code",
+      type: "invite",
+    });
+    assert.equal(
+      path,
+      `${AUTH_CALLBACK_PATH}?code=invite-pkce-code&next=${encodeURIComponent(AUTH_SETUP_PASSWORD_PATH)}&type=invite`,
+    );
+    assert.doesNotMatch(path ?? "", /^\/(\?|$)/);
+    assert.doesNotMatch(path ?? "", /\/login/);
+  });
+
+  it("B: recovery PKCE uses the same callback handoff (never public /)", () => {
+    const invite = buildAuthEmailCallbackHandoffPath({
+      code: "same-shape",
+      type: "invite",
+    });
+    const recovery = buildAuthEmailCallbackHandoffPath({
+      code: "same-shape",
+      type: "recovery",
+    });
+    assert.ok(invite?.startsWith(AUTH_CALLBACK_PATH));
+    assert.ok(recovery?.startsWith(AUTH_CALLBACK_PATH));
+    assert.notEqual(invite, "/");
+    assert.notEqual(recovery, "/");
+  });
+
+  it("returns null when there is no auth code (plain homepage stays public)", () => {
+    assert.equal(buildAuthEmailCallbackHandoffPath({}), null);
+    assert.equal(buildAuthEmailCallbackHandoffPath({ type: "invite" }), null);
   });
 });
 
@@ -137,6 +173,36 @@ describe("mapAuthCallbackDestination", () => {
       exchangeOk: true,
     });
     assert.equal(dest.kind, "setup_password");
+  });
+
+  it("B: invite never dumps to public homepage /", () => {
+    const dest = mapAuthCallbackDestination({
+      type: "invite",
+      next: "/",
+      exchangeOk: true,
+    });
+    assert.equal(dest.kind, "setup_password");
+    assert.equal(dest.path.startsWith(AUTH_SETUP_PASSWORD_PATH), true);
+    assert.notEqual(dest.path, "/");
+  });
+
+  it("E: recovery still goes to setup-password after forgot-password", () => {
+    const dest = mapAuthCallbackDestination({
+      type: "recovery",
+      next: AUTH_SETUP_PASSWORD_PATH,
+      exchangeOk: true,
+    });
+    assert.equal(dest.path, `${AUTH_SETUP_PASSWORD_PATH}?intent=recovery`);
+  });
+
+  it("F: failed invite exchange fails safely on setup-password, not /", () => {
+    const dest = mapAuthCallbackDestination({
+      type: "invite",
+      next: AUTH_SETUP_PASSWORD_PATH,
+      exchangeOk: false,
+    });
+    assert.equal(dest.kind, "invalid");
+    assert.equal(dest.path, `${AUTH_SETUP_PASSWORD_PATH}?error=invalid`);
   });
 });
 

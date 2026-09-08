@@ -2,12 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 
+import { LoginRecoveryHashRedirect } from "@/components/auth/login-recovery-hash-redirect";
 import { siteConfig } from "@/config/site";
 import { roleDashboardHref } from "@/config/roles";
 import { Button } from "@/components/ui/button";
+import { buildAuthEmailCallbackHandoffPath } from "@/lib/auth/auth-redirect";
 import { getProfileRole, getUser } from "@/lib/auth/session";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string; type?: string; next?: string }>;
+}) {
+  const params = await searchParams;
+  const handoff = buildAuthEmailCallbackHandoffPath(params);
+  if (handoff) {
+    redirect(handoff);
+  }
+
   const user = await getUser();
   if (user) {
     const role = await getProfileRole(user.id);
@@ -18,6 +30,7 @@ export default async function HomePage() {
 
   return (
     <div className="relative isolate flex min-h-svh flex-col overflow-hidden">
+      <LoginRecoveryHashRedirect />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(1200px_circle_at_20%_-10%,color-mix(in_oklab,var(--color-primary)_22%,transparent),transparent_55%),radial-gradient(900px_circle_at_90%_20%,color-mix(in_oklab,var(--color-ring)_16%,transparent),transparent_55%)]"
