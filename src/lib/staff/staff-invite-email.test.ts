@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   canResendStaffMemberInvitation,
   canSendActiveStaffPasswordReset,
+  canSendStaffNewInvitation,
   canSendStaffSetupLink,
   formatInviteSentHint,
   isAuthEmailRateLimitError,
@@ -11,6 +12,7 @@ import {
   messageForStaffInviteEmailFailure,
   messageForStaffSetupLinkFailure,
   resolveStaffDirectoryAccessAction,
+  resolveStaffInviteStatusInlineControls,
 } from "@/lib/staff/staff-invite-email";
 import {
   canSendStaffInvitation,
@@ -186,6 +188,132 @@ describe("staff directory access actions", () => {
       }),
       "send_invite",
     );
+  });
+});
+
+describe("Access Status inline Send invitation", () => {
+  it("Ready to invite renders Send invitation", () => {
+    assert.equal(
+      canSendStaffNewInvitation({
+        profileId: null,
+        displayStatus: "ready",
+        email: "teacher@school.edu",
+      }),
+      true,
+    );
+    const controls = resolveStaffInviteStatusInlineControls({
+      profileId: null,
+      displayStatus: "ready",
+      email: "teacher@school.edu",
+    });
+    assert.deepEqual(controls, [
+      { kind: "send_invite", label: "Send invitation", disabled: false },
+    ]);
+  });
+
+  it("Draft does not render Send invitation", () => {
+    assert.equal(
+      canSendStaffNewInvitation({
+        profileId: null,
+        displayStatus: "draft",
+        email: "teacher@school.edu",
+        canSendNewInvite: true,
+      }),
+      false,
+    );
+    const controls = resolveStaffInviteStatusInlineControls({
+      profileId: null,
+      displayStatus: "draft",
+      email: "teacher@school.edu",
+      canSendNewInvite: true,
+    });
+    assert.equal(
+      controls.some((c) => c.kind === "send_invite"),
+      false,
+    );
+  });
+
+  it("Active does not render Send invitation (keeps password reset)", () => {
+    assert.equal(
+      canSendStaffNewInvitation({
+        profileId: "11111111-1111-1111-1111-111111111111",
+        displayStatus: "active",
+        email: "teacher@school.edu",
+      }),
+      false,
+    );
+    const controls = resolveStaffInviteStatusInlineControls({
+      profileId: "11111111-1111-1111-1111-111111111111",
+      displayStatus: "active",
+      email: "teacher@school.edu",
+    });
+    assert.equal(
+      controls.some((c) => c.kind === "send_invite"),
+      false,
+    );
+    assert.deepEqual(controls, [
+      { kind: "send_password_reset", label: "Send password reset", disabled: false },
+    ]);
+  });
+
+  it("successful send gates action away — Invitation sent no longer shows Send invitation", () => {
+    assert.equal(
+      canSendStaffNewInvitation({
+        profileId: null,
+        displayStatus: "invitation_sent",
+        email: "teacher@school.edu",
+      }),
+      false,
+    );
+    const afterSuccess = resolveStaffInviteStatusInlineControls({
+      profileId: null,
+      displayStatus: "invitation_sent",
+      email: "teacher@school.edu",
+      authEmailConfirmed: false,
+    });
+    assert.equal(
+      afterSuccess.some((c) => c.kind === "send_invite"),
+      false,
+    );
+    assert.equal(afterSuccess.some((c) => c.kind === "resend_invite"), true);
+    assert.equal(staffRosterStatusLabel("invitation_sent"), "Invited");
+  });
+
+  it("failed send leaves Ready to invite eligible for Send invitation", () => {
+    // Failure does not change displayStatus — row stays ready and actionable.
+    assert.equal(
+      canSendStaffNewInvitation({
+        profileId: null,
+        displayStatus: "ready",
+        email: "teacher@school.edu",
+      }),
+      true,
+    );
+    const stillEligible = resolveStaffInviteStatusInlineControls({
+      profileId: null,
+      displayStatus: "ready",
+      email: "teacher@school.edu",
+    });
+    assert.deepEqual(stillEligible, [
+      { kind: "send_invite", label: "Send invitation", disabled: false },
+    ]);
+    // Error copy still comes from existing invite failure helpers (toast path).
+    assert.match(
+      messageForStaffInviteEmailFailure("smtp failure", { forResend: false }),
+      /could not be sent/i,
+    );
+  });
+
+  it("action cannot be double-submitted while pending (Sending… + disabled)", () => {
+    const controls = resolveStaffInviteStatusInlineControls({
+      profileId: null,
+      displayStatus: "ready",
+      email: "teacher@school.edu",
+      pending: true,
+    });
+    assert.deepEqual(controls, [
+      { kind: "send_invite", label: "Sending…", disabled: true },
+    ]);
   });
 });
 

@@ -146,6 +146,24 @@ export function canResendStaffMemberInvitation(input: {
   return resolveStaffDirectoryAccessAction(input) === "resend_invite";
 }
 
+/**
+ * Inline Access Status “Send invitation” — Ready to invite only.
+ * Draft may still be eligible via bulk/menu when readiness rules allow; the row
+ * status cell only surfaces the action for ready rows.
+ */
+export function canSendStaffNewInvitation(input: {
+  profileId?: string | null;
+  archivedAt?: string | null;
+  membershipStatus?: string | null;
+  displayStatus: string;
+  email?: string | null;
+  authEmailConfirmed?: boolean | null;
+  canSendNewInvite?: boolean;
+}): boolean {
+  if (input.displayStatus !== "ready") return false;
+  return resolveStaffDirectoryAccessAction(input) === "send_invite";
+}
+
 export function canSendStaffSetupLink(input: {
   profileId?: string | null;
   archivedAt?: string | null;
@@ -171,4 +189,77 @@ export function canSendActiveStaffPasswordReset(input: {
   if (!input.profileId) return false;
   if (!input.email?.trim()) return false;
   return input.displayStatus === "active";
+}
+
+export type StaffInviteStatusInlineControl =
+  | {
+      kind: "send_invite";
+      label: string;
+      disabled: boolean;
+    }
+  | {
+      kind: "resend_invite";
+      label: string;
+      disabled: boolean;
+    }
+  | {
+      kind: "send_setup_link";
+      label: string;
+      disabled: boolean;
+    }
+  | {
+      kind: "send_password_reset";
+      label: string;
+      disabled: boolean;
+    };
+
+/**
+ * Pure label/disabled contract for the Access Status inline text actions.
+ * Used so unit tests can assert Ready→Send invitation, loading, and post-send gating
+ * without mounting the table.
+ */
+export function resolveStaffInviteStatusInlineControls(input: {
+  profileId?: string | null;
+  archivedAt?: string | null;
+  membershipStatus?: string | null;
+  displayStatus: string;
+  email?: string | null;
+  authEmailConfirmed?: boolean | null;
+  canSendNewInvite?: boolean;
+  /** True while a send/resend/setup action is in flight for this row. */
+  pending?: boolean;
+}): StaffInviteStatusInlineControl[] {
+  const pending = Boolean(input.pending);
+  const controls: StaffInviteStatusInlineControl[] = [];
+
+  if (canSendStaffSetupLink(input)) {
+    controls.push({
+      kind: "send_setup_link",
+      label: pending ? "Sending…" : "Send setup link",
+      disabled: pending,
+    });
+  }
+  if (canSendActiveStaffPasswordReset(input)) {
+    controls.push({
+      kind: "send_password_reset",
+      label: pending ? "Sending…" : "Send password reset",
+      disabled: pending,
+    });
+  }
+  if (canSendStaffNewInvitation(input)) {
+    controls.push({
+      kind: "send_invite",
+      label: pending ? "Sending…" : "Send invitation",
+      disabled: pending,
+    });
+  }
+  if (canResendStaffMemberInvitation(input)) {
+    controls.push({
+      kind: "resend_invite",
+      label: pending ? "Resending…" : "Resend invitation",
+      disabled: pending,
+    });
+  }
+
+  return controls;
 }

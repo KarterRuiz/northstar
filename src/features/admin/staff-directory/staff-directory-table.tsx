@@ -77,6 +77,7 @@ import { buildStaffInviteLink } from "@/lib/staff/staff-invite-link";
 import {
   canResendStaffMemberInvitation,
   canSendActiveStaffPasswordReset,
+  canSendStaffNewInvitation,
   canSendStaffSetupLink,
   formatInviteSentHint,
 } from "@/lib/staff/staff-invite-email";
@@ -125,6 +126,14 @@ function StaffInviteStatusCell({
     FormData
   >(sendStaffMemberSetupLinkAction, undefined);
 
+  const canSendNew = canSendStaffNewInvitation({
+    profileId: row.profile_id,
+    archivedAt: row.archived_at,
+    membershipStatus: row.status,
+    displayStatus: row.displayStatus,
+    email: row.email,
+    authEmailConfirmed: row.authEmailConfirmed,
+  });
   const canResend = canResendStaffMemberInvitation({
     profileId: row.profile_id,
     archivedAt: row.archived_at,
@@ -193,6 +202,20 @@ function StaffInviteStatusCell({
             disabled={actionPending}
           >
             {setupPending ? "Sending…" : "Send password reset"}
+          </Button>
+        </form>
+      ) : null}
+      {canSendNew ? (
+        <form action={resendAction} className="relative z-10">
+          <input type="hidden" name="staffMemberId" value={row.id} />
+          <Button
+            type="submit"
+            variant="link"
+            size="sm"
+            className="text-primary h-auto px-0 py-0 text-xs font-medium"
+            disabled={actionPending}
+          >
+            {resendPending ? "Sending…" : "Send invitation"}
           </Button>
         </form>
       ) : null}
