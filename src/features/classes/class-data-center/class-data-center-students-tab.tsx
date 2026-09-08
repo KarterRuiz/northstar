@@ -25,6 +25,7 @@ export async function ClassDataCenterStudentsTab({ classId }: { classId: string 
         role={data.role}
         classId={data.classId}
         classTitle={data.classTitle}
+        schoolYearLabel={data.schoolYearLabel}
         students={data.students}
         showStudentNumber={data.showStudentNumber}
         canManageRoster={canManageClassEnrollment(data.role)}

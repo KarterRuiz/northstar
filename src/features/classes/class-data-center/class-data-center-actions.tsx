@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MoreHorizontal } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -141,9 +142,9 @@ export function ClassDataCenterActions({
             Edit class
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <a href={classDataCenterManageRosterHref(context.role, context.id)}>
+            <Link href={classDataCenterManageRosterHref(context.role, context.id)}>
               Manage roster
-            </a>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={pending || !context.isActive || teachersUnavailable}

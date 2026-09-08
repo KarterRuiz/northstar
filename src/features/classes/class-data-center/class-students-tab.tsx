@@ -43,6 +43,7 @@ export function ClassDataCenterStudentsTable({
   role,
   classId,
   classTitle,
+  schoolYearLabel,
   students,
   showStudentNumber,
   canManageRoster,
@@ -50,6 +51,7 @@ export function ClassDataCenterStudentsTable({
   role: Role;
   classId: string;
   classTitle: string;
+  schoolYearLabel: string | null;
   students: ClassDataCenterRosterStudent[];
   showStudentNumber: boolean;
   canManageRoster: boolean;
@@ -95,20 +97,21 @@ export function ClassDataCenterStudentsTable({
         </div>
         {canManageRoster ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="min-h-11 lg:min-h-8"
-              onClick={() => setManageForcedOpen(true)}
-            >
-              Manage roster
-            </Button>
             <Button asChild variant="outline" size="sm" className="min-h-11 lg:min-h-8">
               <Link href={classDataCenterAddStudentHref(role, classId)}>Add student</Link>
             </Button>
             <Button asChild variant="outline" size="sm" className="min-h-11 lg:min-h-8">
               <Link href={classDataCenterRosterImportHref(role, classId)}>Import roster</Link>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-11 lg:min-h-8"
+              aria-haspopup="dialog"
+              onClick={() => setManageForcedOpen(true)}
+            >
+              Manage roster
             </Button>
           </div>
         ) : null}
@@ -231,6 +234,7 @@ export function ClassDataCenterStudentsTable({
           role={role}
           classId={classId}
           classTitle={classTitle}
+          schoolYearLabel={schoolYearLabel}
           students={students}
         />
       ) : null}

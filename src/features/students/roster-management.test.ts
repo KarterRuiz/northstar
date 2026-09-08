@@ -76,9 +76,14 @@ describe("Roster management — CDC hrefs", () => {
       classDataCenterManageRosterHref("admin", classId),
       `/dashboard/admin/classes/${classId}/students?manage=1`,
     );
-    assert.equal(
-      classDataCenterManageRosterHref("admin"),
-      "/dashboard/admin/students/new",
-    );
+  });
+
+  it("keeps Manage roster separate from Add student", () => {
+    const manage = classDataCenterManageRosterHref("admin", classId);
+    const add = classDataCenterAddStudentHref("admin", classId);
+    assert.notEqual(manage, add);
+    assert.match(manage, /\/classes\/.+\/students\?manage=1$/);
+    assert.doesNotMatch(manage, /\/students\/new/);
+    assert.match(add, /\/students\/new\?classId=/);
   });
 });

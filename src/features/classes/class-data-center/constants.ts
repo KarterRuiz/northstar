@@ -95,11 +95,12 @@ export function classDataCenterAttendanceWorkspaceHref(
   return `/dashboard/admin/attendance?${p.toString()}`;
 }
 
-export function classDataCenterManageRosterHref(role: Role, classId?: string): string {
-  if (classId) {
-    return `${classDataCenterPath(role, classId, "students")}?manage=1`;
-  }
-  return `/dashboard/${role}/students/new`;
+/**
+ * Opens Class Data Center → Students with the in-page Manage roster dialog.
+ * Never points at Add student (`/students/new`) — that is `classDataCenterAddStudentHref`.
+ */
+export function classDataCenterManageRosterHref(role: Role, classId: string): string {
+  return `${classDataCenterPath(role, classId, "students")}?manage=1`;
 }
 
 export function classDataCenterAddStudentHref(role: Role, classId: string): string {

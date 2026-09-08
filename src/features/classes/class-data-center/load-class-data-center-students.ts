@@ -77,6 +77,7 @@ export type ClassDataCenterStudentsData =
       role: Role;
       classId: string;
       classTitle: string;
+      schoolYearLabel: string | null;
       students: ClassDataCenterRosterStudent[];
       showStudentNumber: boolean;
     }
@@ -164,6 +165,7 @@ export const loadClassDataCenterStudents = cache(
         role,
         classId,
         classTitle,
+        schoolYearLabel: yearRes.year?.label || schoolYearLabel || null,
         students: [],
         showStudentNumber: false,
       };
@@ -292,6 +294,7 @@ export const loadClassDataCenterStudents = cache(
       role,
       classId,
       classTitle,
+      schoolYearLabel: yearRes.year?.label || schoolYearLabel || null,
       students,
       showStudentNumber: classRosterHasStudentNumbers(students),
     };

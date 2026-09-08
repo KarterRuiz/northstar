@@ -34,6 +34,7 @@ import {
   classDataCenterAddStudentHref,
   classDataCenterRosterImportHref,
 } from "./constants";
+import { ClassRosterStudentActions } from "./class-roster-student-actions";
 import type { ClassDataCenterRosterStudent } from "./load-class-data-center-students";
 
 type BulkConfirm = "remove" | "archive" | null;
@@ -68,6 +69,7 @@ export function ClassManageRosterDialog({
   role,
   classId,
   classTitle,
+  schoolYearLabel,
   students,
 }: {
   open: boolean;
@@ -75,6 +77,7 @@ export function ClassManageRosterDialog({
   role: Role;
   classId: string;
   classTitle: string;
+  schoolYearLabel: string | null;
   students: ClassDataCenterRosterStudent[];
 }) {
   const router = useRouter();
@@ -190,6 +193,14 @@ export function ClassManageRosterDialog({
       ? selectedStudents[0]!.displayName
       : `${selectedCount} students`;
 
+  const contextLine = [
+    classTitle,
+    schoolYearLabel?.trim() || null,
+    students.length === 1 ? "1 enrolled" : `${students.length} enrolled`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <>
       <Dialog open={open && bulkConfirm == null} onOpenChange={handleOpenChange}>
@@ -201,19 +212,13 @@ export function ClassManageRosterDialog({
             <DialogHeader className="space-y-1 text-left">
               <DialogTitle>Manage roster</DialogTitle>
               <DialogDescription>
-                Enrolled students in {classTitle}. Remove keeps history; archive withdraws all
-                active enrollments.
+                {contextLine}. Remove keeps the student record; archive withdraws all active
+                enrollments. Delete is only available when there is no dependent history.
               </DialogDescription>
             </DialogHeader>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3">
-            <Button asChild variant="outline" size="sm">
-              <Link href={classDataCenterAddStudentHref(role, classId)}>Add new student</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={classDataCenterRosterImportHref(role, classId)}>Import roster</Link>
-            </Button>
             <Button
               type="button"
               variant="outline"
@@ -232,9 +237,95 @@ export function ClassManageRosterDialog({
             >
               Archive selected
             </Button>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button asChild variant="ghost" size="sm">
+                <Link href={classDataCenterAddStudentHref(role, classId)}>Add student</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={classDataCenterRosterImportHref(role, classId)}>Import roster</Link>
+              </Button>
+            </div>
           </div>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <div className="space-y-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <label className="text-heading text-xs font-semibold tracking-wide uppercase">
+                  Current roster ({students.length})
+                </label>
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter roster…"
+                  autoComplete="off"
+                  className="h-9 max-w-xs"
+                />
+              </div>
+
+              {students.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No students enrolled yet. Enroll an existing student below, or use Add student /
+                  Import roster.
+                </p>
+              ) : visible.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No matching students.</p>
+              ) : (
+                <div className="overflow-hidden rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40">
+                      <tr className="text-left">
+                        <th className="w-10 px-3 py-2">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all visible students"
+                            checked={
+                              visible.length > 0 &&
+                              visible.every((s) => selected.has(s.studentId))
+                            }
+                            onChange={toggleAllVisible}
+                          />
+                        </th>
+                        <th className="px-3 py-2 font-medium">Student</th>
+                        <th className="px-3 py-2 font-medium">Number</th>
+                        <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="w-12 px-3 py-2">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((row) => (
+                        <tr key={row.studentId} className="border-t">
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${row.displayName}`}
+                              checked={selected.has(row.studentId)}
+                              onChange={() => toggle(row.studentId)}
+                            />
+                          </td>
+                          <td className="px-3 py-2 font-medium">{row.displayName}</td>
+                          <td className="text-muted-foreground px-3 py-2 font-mono text-xs">
+                            {row.studentNumber ?? "—"}
+                          </td>
+                          <td className="text-muted-foreground px-3 py-2 text-xs">Active</td>
+                          <td className="px-2 py-1.5 text-right">
+                            <ClassRosterStudentActions
+                              role={role}
+                              classId={classId}
+                              classTitle={classTitle}
+                              student={row}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <label className="text-heading text-xs font-semibold tracking-wide uppercase">
                 Enroll existing student
@@ -300,71 +391,6 @@ export function ClassManageRosterDialog({
               ) : enrollQuery.trim().length >= 2 && !searchPending ? (
                 <p className="text-muted-foreground text-sm">No matching students to enroll.</p>
               ) : null}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <label className="text-heading text-xs font-semibold tracking-wide uppercase">
-                  Current roster ({students.length})
-                </label>
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter roster…"
-                  autoComplete="off"
-                  className="h-9 max-w-xs"
-                />
-              </div>
-
-              {students.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No students enrolled yet. Add a new student, import a roster, or enroll an
-                  existing student above.
-                </p>
-              ) : visible.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No matching students.</p>
-              ) : (
-                <div className="overflow-hidden rounded-lg border">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/40">
-                      <tr className="text-left">
-                        <th className="w-10 px-3 py-2">
-                          <input
-                            type="checkbox"
-                            aria-label="Select all visible students"
-                            checked={
-                              visible.length > 0 &&
-                              visible.every((s) => selected.has(s.studentId))
-                            }
-                            onChange={toggleAllVisible}
-                          />
-                        </th>
-                        <th className="px-3 py-2 font-medium">Student</th>
-                        <th className="px-3 py-2 font-medium">Number</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visible.map((row) => (
-                        <tr key={row.studentId} className="border-t">
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${row.displayName}`}
-                              checked={selected.has(row.studentId)}
-                              onChange={() => toggle(row.studentId)}
-                            />
-                          </td>
-                          <td className="px-3 py-2 font-medium">{row.displayName}</td>
-                          <td className="text-muted-foreground px-3 py-2 font-mono text-xs">
-                            {row.studentNumber ?? "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
           </div>
 
