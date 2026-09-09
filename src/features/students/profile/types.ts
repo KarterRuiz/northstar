@@ -91,7 +91,7 @@ export type AuditEvent = {
   details: string;
 };
 
-/** Directory row — backed by Supabase `students` + active `student_enrollments`. */
+/** Directory row — operationally active enrollment in an active class. */
 export type StudentListEntry = {
   id: string;
   fullName: string;

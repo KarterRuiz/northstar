@@ -371,7 +371,8 @@ export const loadStaffLeadershipMetrics = cache(
           const { data: clsRows } = await supabase
             .from("classes")
             .select("id, name, section")
-            .in("id", enrollmentClassIds);
+            .in("id", enrollmentClassIds)
+            .eq("is_active", true);
           for (const c of clsRows ?? []) {
             classNames.set(c.id, classLabel(c.name, c.section));
           }

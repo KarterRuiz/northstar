@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 
 import { todayIso } from "@/features/attendance/attendance-date-utils";
+import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
 import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
@@ -94,8 +95,9 @@ function softDbError(raw: string | null): string | null {
 
 /**
  * Loads admin overview metrics in a small number of round-trips.
- * Active students = distinct `student_id` with at least one `active` enrollment
- * (bounded fetch: only `student_id` column; TODO: RPC for very large rosters).
+ * Active students = distinct `student_id` with ≥1 operationally active enrollment
+ * (`status = active` AND class `is_active = true`). See active-student-enrollments.ts.
+ * (Bounded fetch: student_id + inner class; TODO: RPC for very large rosters).
  */
 export const getAdminDashboardStats = cache(
   async (): Promise<AdminDashboardStats> => {
@@ -117,8 +119,9 @@ export const getAdminDashboardStats = cache(
     ] = await Promise.all([
       supabase
         .from("student_enrollments")
-        .select("student_id")
-        .eq("status", "active"),
+        .select("student_id, classes!inner ( id )")
+        .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
+        .eq("classes.is_active", true),
       supabase
         .from("classes")
         .select("id", { count: "exact", head: true })

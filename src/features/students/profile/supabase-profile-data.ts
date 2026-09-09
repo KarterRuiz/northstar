@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { canManageStudents, isRole, roleLabels, type Role } from "@/config/roles";
 import { loadReportCardsForStudent } from "@/features/report-cards/load-report-cards-for-student";
+import { isOperationallyActiveEnrollment } from "@/features/students/active-student-enrollments";
 import { assertTeacherCanAccessStudent } from "@/lib/auth/report-card-upload-role";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -27,6 +28,7 @@ export type ProfileLoadResult =
 type ClassEmbed = {
   name: string;
   section: string | null;
+  is_active: boolean | null;
   grade_levels: { name: string } | { name: string }[] | null;
 };
 type EnrollmentEmbed = {
@@ -94,27 +96,62 @@ function enrollmentStatusToProfile(
   }
 }
 
+function enrollmentClass(e: EnrollmentEmbed): ClassEmbed | null {
+  return (Array.isArray(e.classes) ? e.classes[0] : e.classes) ?? null;
+}
+
+/**
+ * Prefer an operationally active enrollment (active status + active class).
+ * If the student only has active enrollments in archived classes, treat as
+ * not operationally active (inactive / no current placement).
+ */
 function normalizeEnrollment(
   row: StudentEmbedRow,
 ): { status: string; klass: ClassEmbed | null } | null {
   const raw = row.student_enrollments;
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   if (list.length === 0) return null;
-  const active = list.filter((e) => e.status === "active");
-  const pool = active.length > 0 ? active : list;
-  const ranked = [...pool].sort((a, b) =>
-    classLabel(
-      (Array.isArray(a.classes) ? a.classes[0] : a.classes) ?? null,
-    ).localeCompare(
-      classLabel(
-        (Array.isArray(b.classes) ? b.classes[0] : b.classes) ?? null,
-      ),
-    ),
+
+  const operational = list.filter((e) =>
+    isOperationallyActiveEnrollment({
+      status: e.status,
+      classIsActive: enrollmentClass(e)?.is_active === true,
+    }),
   );
-  const first = ranked[0]!;
-  const klass =
-    (Array.isArray(first.classes) ? first.classes[0] : first.classes) ?? null;
-  return { status: first.status, klass };
+
+  if (operational.length > 0) {
+    const ranked = [...operational].sort((a, b) =>
+      classLabel(enrollmentClass(a)).localeCompare(
+        classLabel(enrollmentClass(b)),
+      ),
+    );
+    const first = ranked[0]!;
+    return { status: first.status, klass: enrollmentClass(first) };
+  }
+
+  // Active-only-in-archived → not operationally active.
+  const onlyArchivedActive =
+    list.length > 0 &&
+    list.every(
+      (e) =>
+        e.status === "active" && enrollmentClass(e)?.is_active === false,
+    );
+  if (onlyArchivedActive) {
+    return { status: "inactive", klass: null };
+  }
+
+  // Otherwise surface a non-active enrollment status without implying current placement.
+  const nonActive = list.filter((e) => e.status !== "active");
+  if (nonActive.length > 0) {
+    const ranked = [...nonActive].sort((a, b) =>
+      classLabel(enrollmentClass(a)).localeCompare(
+        classLabel(enrollmentClass(b)),
+      ),
+    );
+    return { status: ranked[0]!.status, klass: null };
+  }
+
+  return { status: "inactive", klass: null };
 }
 
 export const loadStudentProfileResult = cache(
@@ -135,7 +172,7 @@ export const loadStudentProfileResult = cache(
         external_id,
         student_enrollments (
           status,
-          classes ( name, section, grade_levels ( name ) )
+          classes ( name, section, is_active, grade_levels ( name ) )
         )
       `,
       )
@@ -153,8 +190,8 @@ export const loadStudentProfileResult = cache(
     const en = normalizeEnrollment(row);
     const klass = en?.klass ?? null;
     const gname = gradeName(klass);
-    const homeroom = en ? classLabel(klass) : "No active enrollment";
-    const statusRaw = en?.status ?? "active";
+    const homeroom = klass ? classLabel(klass) : "No active enrollment";
+    const statusRaw = en?.status ?? "inactive";
     const status = enrollmentStatusToProfile(statusRaw);
 
     const profile: StudentProfile = {

@@ -1,6 +1,7 @@
 "use server";
 
 import { canUploadReportCards, isRole } from "@/config/roles";
+import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
 import { getReportCardStaff } from "@/lib/auth/report-card-upload-role";
 import { logServerError } from "@/lib/errors/safe-user-message";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -78,17 +79,28 @@ export async function searchStudentsForReportCardAction(
   }
 
   const ids = rows.map((r) => r.id);
+  // Current placement only: active enrollment in an active class.
   const enrollmentsRes = await supabase
     .from("student_enrollments")
-    .select("student_id, class_id")
+    .select("student_id, class_id, classes!inner ( id )")
     .in("student_id", ids)
-    .eq("status", "active");
+    .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
+    .eq("classes.is_active", true);
 
   if (enrollmentsRes.error) {
     logServerError(
       "report-cards.studentSearch.enrollments",
       enrollmentsRes.error.message,
     );
+  }
+
+  const operationalStudentIds = new Set(
+    (enrollmentsRes.data ?? []).map((e) => e.student_id),
+  );
+  // Align with directory: only current (operationally active) students.
+  const currentRows = rows.filter((r) => operationalStudentIds.has(r.id));
+  if (currentRows.length === 0) {
+    return { ok: true, students: [] };
   }
 
   const classIds = [
@@ -100,6 +112,7 @@ export async function searchStudentsForReportCardAction(
           .from("classes")
           .select("id, name, section, grade_level_id")
           .in("id", classIds)
+          .eq("is_active", true)
       : { data: [] as const, error: null };
 
   if (classesRes.error) {
@@ -136,7 +149,7 @@ export async function searchStudentsForReportCardAction(
     }
   }
 
-  const students: ReportCardStudentOption[] = rows.map((row) => {
+  const students: ReportCardStudentOption[] = currentRows.map((row) => {
     const placement = classByStudent.get(row.id);
     return {
       id: row.id,

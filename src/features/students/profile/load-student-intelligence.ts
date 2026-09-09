@@ -17,6 +17,7 @@ import {
   computeStudentReportReadiness,
   type StudentReportReadiness,
 } from "@/features/teacher/gradebook/report-readiness";
+import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -109,18 +110,20 @@ export const loadStudentIntelligence = cache(
         `
         class_id,
         status,
-        classes (
+        classes!inner (
           id,
           name,
           section,
           school_year_id,
+          is_active,
           school_years ( id, label ),
           grade_levels ( name )
         )
       `,
       )
       .eq("student_id", studentId)
-      .eq("status", "active")
+      .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
+      .eq("classes.is_active", true)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

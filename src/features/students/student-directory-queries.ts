@@ -3,6 +3,10 @@ import "server-only";
 import { cache } from "react";
 
 import { getProfileRole, getUser } from "@/lib/auth/session";
+import {
+  OPERATIONAL_ACTIVE_ENROLLMENT_STATUS,
+  isOperationallyActiveEnrollment,
+} from "@/features/students/active-student-enrollments";
 import type { StudentListEntry } from "@/features/students/profile/types";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -15,6 +19,7 @@ type GradeLevelEmbed = { name: string } | null;
 type ClassEmbed = {
   name: string;
   section: string | null;
+  is_active?: boolean;
   grade_levels: GradeLevelEmbed | GradeLevelEmbed[] | null;
 };
 type StudentEmbed = {
@@ -70,7 +75,8 @@ function normalizeEnrollmentRow(row: EnrollmentRow): {
 }
 
 /**
- * Active students (≥1 `active` enrollment) for the directory table.
+ * Operationally active students (≥1 active enrollment in an active class)
+ * for the directory table. See active-student-enrollments.ts.
  * Teachers are scoped in-query to `class_teachers` class ids (RLS also applies).
  */
 export const loadStudentDirectory = cache(
@@ -124,11 +130,13 @@ export const loadStudentDirectory = cache(
         classes!inner (
           name,
           section,
+          is_active,
           grade_levels ( name )
         )
       `,
       )
-      .eq("status", "active")
+      .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
+      .eq("classes.is_active", true)
       .limit(2000);
 
     if (teacherClassIds) {
@@ -161,7 +169,14 @@ export const loadStudentDirectory = cache(
     for (const raw of rows) {
       const norm = normalizeEnrollmentRow(raw);
       if (!norm) continue;
-      const { student, status, classes } = norm;
+      const { student, classes } = norm;
+      // Query already filters operational active; badge mirrors that rule.
+      const status = isOperationallyActiveEnrollment({
+        status: norm.status,
+        classIsActive: classes?.is_active !== false,
+      })
+        ? OPERATIONAL_ACTIVE_ENROLLMENT_STATUS
+        : "inactive";
       const gl = gradeLevelName(classes);
       const cl = classLabel(classes);
       const entry: StudentListEntry = {
