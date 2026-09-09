@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 
 import { BulkAddClassSelect } from "./bulk-add-class-select";
 import {
-  BULK_ADD_EXTERNAL_ID_MAX,
   BULK_ADD_MAX_ROWS,
   BULK_ADD_NAME_MAX,
   BULK_ADD_ROW_BATCH,
@@ -74,10 +73,10 @@ export function BulkAddGrid({
             <TableHeader className="bg-background sticky top-0 z-10 shadow-[0_1px_0_0_hsl(var(--border))]">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-10 px-2">#</TableHead>
+                <TableHead className="min-w-[5.5rem]">Roster #</TableHead>
                 <TableHead className="min-w-[8rem]">First *</TableHead>
                 <TableHead className="min-w-[8rem]">Last *</TableHead>
                 <TableHead className="min-w-[7rem]">Preferred</TableHead>
-                <TableHead className="min-w-[7rem]">Student #</TableHead>
                 <TableHead className="min-w-[12rem]">Class *</TableHead>
                 <TableHead className="min-w-[7rem]">Status</TableHead>
                 <TableHead className="w-12 px-2">
@@ -93,7 +92,7 @@ export function BulkAddGrid({
                 const firstErr = fieldError(issues, "firstName");
                 const lastErr = fieldError(issues, "lastName");
                 const prefErr = fieldError(issues, "preferredName");
-                const extErr = fieldError(issues, "externalId");
+                const rosterErr = fieldError(issues, "rosterNumber");
                 const classErr = fieldError(issues, "classId");
                 const statusErr = fieldError(issues, "enrollmentStatus");
 
@@ -102,7 +101,7 @@ export function BulkAddGrid({
                   firstErr,
                   lastErr,
                   classErr,
-                  extErr,
+                  rosterErr,
                   statusErr,
                   prefErr,
                 ]
@@ -128,6 +127,25 @@ export function BulkAddGrid({
                     >
                       <TableCell className="text-muted-foreground px-2 text-xs tabular-nums">
                         {index + 1}
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Input
+                          value={row.rosterNumber}
+                          inputMode="numeric"
+                          disabled={disabled}
+                          aria-label={`Row ${index + 1} roster number`}
+                          aria-invalid={Boolean(rosterErr) || undefined}
+                          placeholder="1"
+                          className={cn(
+                            "h-8 font-mono text-xs tabular-nums",
+                            rosterErr && "border-destructive",
+                          )}
+                          onChange={(e) =>
+                            onChangeRow(row.key, {
+                              rosterNumber: e.target.value,
+                            })
+                          }
+                        />
                       </TableCell>
                       <TableCell className="p-1.5">
                         <Input
@@ -176,22 +194,6 @@ export function BulkAddGrid({
                             onChangeRow(row.key, {
                               preferredName: e.target.value,
                             })
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="p-1.5">
-                        <Input
-                          value={row.externalId}
-                          maxLength={BULK_ADD_EXTERNAL_ID_MAX}
-                          disabled={disabled}
-                          aria-label={`Row ${index + 1} student number`}
-                          aria-invalid={Boolean(extErr) || undefined}
-                          className={cn(
-                            "h-8 font-mono text-xs",
-                            extErr && "border-destructive",
-                          )}
-                          onChange={(e) =>
-                            onChangeRow(row.key, { externalId: e.target.value })
                           }
                         />
                       </TableCell>
@@ -288,8 +290,8 @@ export function BulkAddGrid({
           Add {BULK_ADD_ROW_BATCH} more rows
         </Button>
         <p className="text-muted-foreground text-xs">
-          {rows.length} / {BULK_ADD_MAX_ROWS} rows · Paste from Excel/Sheets into
-          any cell
+          {rows.length} / {BULK_ADD_MAX_ROWS} rows · Roster # is class order
+          (1–23). Rows stay where you type them.
         </p>
       </div>
     </div>

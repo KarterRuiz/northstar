@@ -15,14 +15,21 @@ export const metadata: Metadata = {
 
 type PageProps = {
   params: Promise<{ role: string }>;
+  searchParams?: Promise<{ classId?: string }>;
 };
 
-export default async function BulkAddStudentsPage({ params }: PageProps) {
+export default async function BulkAddStudentsPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { role: roleParam } = await params;
   if (!isRole(roleParam)) notFound();
   const role = roleParam as Role;
   assertStudentDirectoryAccess(role);
   if (!canManageStudents(role)) notFound();
+
+  const query = searchParams ? await searchParams : {};
+  const defaultClassId = query.classId?.trim() || null;
 
   const contextLoad = await loadBulkAddPageContext();
 
@@ -37,8 +44,8 @@ export default async function BulkAddStudentsPage({ params }: PageProps) {
             Add multiple students
           </h1>
           <p className="text-muted-foreground max-w-2xl text-sm leading-snug">
-            Enter several students at once, then review before creating their
-            records.
+            Enter several students with class Roster # order, then review before
+            creating their records. Single-letter last names are allowed.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -59,7 +66,7 @@ export default async function BulkAddStudentsPage({ params }: PageProps) {
         <BulkAddWizard
           dashboardRole={role}
           classOptions={contextLoad.classes}
-          existingExternalIds={contextLoad.existingExternalIds}
+          defaultClassId={defaultClassId}
         />
       )}
     </div>

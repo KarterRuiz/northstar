@@ -20,6 +20,7 @@ import {
   teacherStudentDisplayName,
 } from "@/features/teacher/class-workspace/class-roster";
 import { attendancePulseLabel } from "@/features/teacher/class-workspace/class-workspace-copy";
+import { compareRosterOrder } from "@/features/students/roster-order";
 import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
@@ -105,6 +106,7 @@ export const loadClassDataCenterStudents = cache(
         `
         id,
         student_id,
+        roster_number,
         students!inner (
           id, first_name, last_name, preferred_name, external_id
         )
@@ -123,11 +125,17 @@ export const loadClassDataCenterStudents = cache(
       enrollmentId: string;
       displayName: string;
       studentNumber: string | null;
+      rosterNumber: number | null;
       searchText: string;
     };
     const drafts: Draft[] = [];
     for (const raw of enRows ?? []) {
       const enrollmentId = (raw as { id?: string }).id;
+      const rosterNumberRaw = (raw as { roster_number?: number | null }).roster_number;
+      const rosterNumber =
+        typeof rosterNumberRaw === "number" && Number.isFinite(rosterNumberRaw)
+          ? rosterNumberRaw
+          : null;
       const student = unwrapOne(
         (raw as { students: StudentEmbed | StudentEmbed[] | null }).students,
       );
@@ -146,6 +154,7 @@ export const loadClassDataCenterStudents = cache(
         enrollmentId,
         displayName,
         studentNumber,
+        rosterNumber,
         searchText: classRosterSearchText({
           displayName,
           firstName,
@@ -156,7 +165,10 @@ export const loadClassDataCenterStudents = cache(
       });
     }
     drafts.sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+      compareRosterOrder(
+        { rosterNumber: a.rosterNumber, displayName: a.displayName },
+        { rosterNumber: b.rosterNumber, displayName: b.displayName },
+      ),
     );
 
     if (drafts.length === 0) {

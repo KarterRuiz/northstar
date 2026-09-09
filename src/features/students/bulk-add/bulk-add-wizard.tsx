@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 import type { Role } from "@/config/roles";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { createBulkAddRowKey } from "@/features/students/roster-order";
 
 import { createBulkStudentsAction } from "./bulk-add-actions";
 import { BulkAddGrid } from "./bulk-add-grid";
@@ -34,7 +35,6 @@ import {
   parseBulkAddPaste,
   planBulkAddPasteApply,
 } from "./parse-bulk-paste";
-import { normalizeMatchKey } from "@/features/students/roster-import/match-helpers";
 
 import type {
   BulkAddClassOption,
@@ -52,39 +52,35 @@ type Step = "edit" | "review" | "result";
 type BulkAddWizardProps = {
   dashboardRole: Role;
   classOptions: BulkAddClassOption[];
-  existingExternalIds: string[];
+  /** When launched from a class, preselect that class on new rows. */
+  defaultClassId?: string | null;
 };
 
 function statusLabel(s: string): string {
   return s.replaceAll("_", " ");
 }
 
-function makeInitialRows(prefix: string): BulkAddRowDraft[] {
-  return Array.from({ length: BULK_ADD_INITIAL_ROWS }, (_, i) =>
-    createEmptyBulkAddRow(`${prefix}-${i}`),
+function makeInitialRows(classId: string): BulkAddRowDraft[] {
+  return Array.from({ length: BULK_ADD_INITIAL_ROWS }, () =>
+    createEmptyBulkAddRow(createBulkAddRowKey(), { classId }),
   );
 }
 
 export function BulkAddWizard({
   dashboardRole,
   classOptions,
-  existingExternalIds,
+  defaultClassId = null,
 }: BulkAddWizardProps) {
-  const idPrefix = useId();
-  const keySeq = useRef(0);
-  const makeKey = () => {
-    keySeq.current += 1;
-    return `${idPrefix}-${keySeq.current}`;
-  };
+  const defaultClass =
+    defaultClassId && classOptions.some((c) => c.id === defaultClassId)
+      ? defaultClassId
+      : "";
 
-  const existingSet = useMemo(
-    () => new Set(existingExternalIds.map((v) => normalizeMatchKey(v))),
-    [existingExternalIds],
-  );
+  const makeKey = () => createBulkAddRowKey();
 
   const [step, setStep] = useState<Step>("edit");
   const [rows, setRows] = useState<BulkAddRowDraft[]>(() =>
-    makeInitialRows(idPrefix),
+    makeInitialRows(defaultClass),
   );
   const [showIssues, setShowIssues] = useState(false);
   const [readyRows, setReadyRows] = useState<BulkAddValidatedRow[]>([]);
@@ -105,9 +101,8 @@ export function BulkAddWizard({
     () =>
       validateBulkAddRows(rows, {
         classOptions,
-        existingExternalIds: existingSet,
       }),
-    [rows, classOptions, existingSet],
+    [rows, classOptions],
   );
 
   const issuesByKey =
@@ -117,8 +112,16 @@ export function BulkAddWizard({
   const importHref = `/dashboard/${dashboardRole}/students/import`;
 
   const updateRow = (key: string, patch: Partial<BulkAddRowDraft>) => {
+    // Never rewrite keys; never reorder while typing.
     setRows((prev) =>
-      prev.map((row) => (row.key === key ? { ...row, ...patch } : row)),
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        return {
+          ...row,
+          ...patch,
+          key: row.key,
+        };
+      }),
     );
     setShowIssues(false);
     setPasteNote(null);
@@ -129,9 +132,13 @@ export function BulkAddWizard({
       const room = BULK_ADD_MAX_ROWS - prev.length;
       const n = Math.min(count, room);
       if (n <= 0) return prev;
+      const inheritClass =
+        prev.find((r) => r.classId.trim())?.classId.trim() || defaultClass;
       return [
         ...prev,
-        ...Array.from({ length: n }, () => createEmptyBulkAddRow(makeKey())),
+        ...Array.from({ length: n }, () =>
+          createEmptyBulkAddRow(makeKey(), { classId: inheritClass }),
+        ),
       ];
     });
   };
@@ -178,6 +185,7 @@ export function BulkAddWizard({
       makeKey,
       maxRows: BULK_ADD_MAX_ROWS,
       forceOverwrite,
+      defaultClassId: defaultClass,
     });
 
     setRows(plan.nextRows);
@@ -191,7 +199,6 @@ export function BulkAddWizard({
   const goReview = () => {
     const next = validateBulkAddRows(rows, {
       classOptions,
-      existingExternalIds: existingSet,
     });
     setShowIssues(true);
     if (next.readyCount === 0) {
@@ -223,7 +230,7 @@ export function BulkAddWizard({
           firstName: r.firstName,
           lastName: r.lastName,
           preferredName: r.preferredName,
-          externalId: r.externalId,
+          rosterNumber: r.rosterNumber,
           classId: r.classId,
           enrollmentStatus: r.enrollmentStatus,
         })),
@@ -240,7 +247,7 @@ export function BulkAddWizard({
   };
 
   const resetForMore = () => {
-    setRows(makeInitialRows(`${idPrefix}-more`));
+    setRows(makeInitialRows(defaultClass));
     setReadyRows([]);
     setCreateResult(null);
     setCreateError(null);
@@ -270,15 +277,18 @@ export function BulkAddWizard({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Roster #</TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead>Class</TableHead>
-                  <TableHead>Student #</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {createResult.created.map((row) => (
                   <TableRow key={row.key}>
+                    <TableCell className="font-mono text-xs tabular-nums">
+                      {row.rosterNumber ?? "—"}
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/dashboard/${dashboardRole}/students/${row.studentId}/overview`}
@@ -288,9 +298,6 @@ export function BulkAddWizard({
                       </Link>
                     </TableCell>
                     <TableCell className="text-xs">{row.classLabel}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {row.externalId ?? "—"}
-                    </TableCell>
                     <TableCell className="capitalize text-xs">
                       {statusLabel(row.enrollmentStatus)}
                     </TableCell>
@@ -349,15 +356,18 @@ export function BulkAddWizard({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Roster #</TableHead>
                 <TableHead>Student</TableHead>
                 <TableHead>Class</TableHead>
-                <TableHead>Student #</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {readyRows.map((row) => (
                 <TableRow key={row.key}>
+                  <TableCell className="font-mono text-xs tabular-nums">
+                    {row.rosterNumber ?? "—"}
+                  </TableCell>
                   <TableCell className="font-medium">
                     {row.firstName} {row.lastName}
                     {row.preferredName ? (
@@ -368,9 +378,6 @@ export function BulkAddWizard({
                     ) : null}
                   </TableCell>
                   <TableCell className="text-xs">{row.classLabel}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {row.externalId ?? "—"}
-                  </TableCell>
                   <TableCell className="capitalize text-xs">
                     {statusLabel(row.enrollmentStatus)}
                   </TableCell>
@@ -381,8 +388,9 @@ export function BulkAddWizard({
         </div>
 
         <p className="text-muted-foreground text-xs">
-          Grade follows each selected class. All listed students will be created
-          with enrollment records in one action.
+          Roster # is the class order and stays as entered. Grade follows each
+          selected class. All listed students will be created with enrollment
+          records in one action.
         </p>
 
         <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
@@ -495,6 +503,7 @@ export function BulkAddWizard({
                   makeKey,
                   maxRows: BULK_ADD_MAX_ROWS,
                   forceOverwrite: false,
+                  defaultClassId: defaultClass,
                 });
                 setRows(plan.nextRows);
                 setShowIssues(false);

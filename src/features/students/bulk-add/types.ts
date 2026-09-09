@@ -1,12 +1,13 @@
 import type { EnrollmentStatusForm } from "@/features/students/enrollment-constants";
 
 export type BulkAddRowDraft = {
-  /** Stable client key for React lists. */
+  /** Immutable client key for React lists — never derived from editable fields. */
   key: string;
   firstName: string;
   lastName: string;
   preferredName: string;
-  externalId: string;
+  /** Class-scoped roster position (string while editing). Not school-wide student #. */
+  rosterNumber: string;
   classId: string;
   enrollmentStatus: EnrollmentStatusForm;
 };
@@ -15,7 +16,7 @@ export type BulkAddField =
   | "firstName"
   | "lastName"
   | "preferredName"
-  | "externalId"
+  | "rosterNumber"
   | "classId"
   | "enrollmentStatus"
   | "row";
@@ -31,7 +32,7 @@ export type BulkAddValidatedRow = {
   firstName: string;
   lastName: string;
   preferredName: string | null;
-  externalId: string | null;
+  rosterNumber: number | null;
   classId: string;
   classLabel: string;
   enrollmentStatus: EnrollmentStatusForm;
@@ -57,7 +58,7 @@ export type BulkAddCreateRowInput = {
   firstName: string;
   lastName: string;
   preferredName: string | null;
-  externalId: string | null;
+  rosterNumber: number | null;
   classId: string;
   enrollmentStatus: EnrollmentStatusForm;
 };
@@ -68,7 +69,7 @@ export type BulkAddCreatedRow = {
   firstName: string;
   lastName: string;
   classLabel: string;
-  externalId: string | null;
+  rosterNumber: number | null;
   enrollmentStatus: EnrollmentStatusForm;
 };
 

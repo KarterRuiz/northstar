@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 
 import { loadCheckInSignals } from "@/features/teacher/dashboard/load-check-in-signals";
+import { compareRosterOrder } from "@/features/students/roster-order";
 import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
@@ -70,6 +71,7 @@ export const loadTeacherClassRoster = cache(
       .select(
         `
         student_id,
+        roster_number,
         students!inner (
           id,
           first_name,
@@ -91,11 +93,17 @@ export const loadTeacherClassRoster = cache(
       studentId: string;
       displayName: string;
       studentNumber: string | null;
+      rosterNumber: number | null;
       searchText: string;
     };
 
     const drafts: Draft[] = [];
     for (const raw of enRows ?? []) {
+      const rosterNumberRaw = (raw as { roster_number?: number | null }).roster_number;
+      const rosterNumber =
+        typeof rosterNumberRaw === "number" && Number.isFinite(rosterNumberRaw)
+          ? rosterNumberRaw
+          : null;
       const student = unwrapOne(
         (raw as { students: StudentEmbed | StudentEmbed[] | null }).students,
       );
@@ -113,6 +121,7 @@ export const loadTeacherClassRoster = cache(
         studentId: student.id,
         displayName,
         studentNumber,
+        rosterNumber,
         searchText: classRosterSearchText({
           displayName,
           firstName,
@@ -124,7 +133,10 @@ export const loadTeacherClassRoster = cache(
     }
 
     drafts.sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+      compareRosterOrder(
+        { rosterNumber: a.rosterNumber, displayName: a.displayName },
+        { rosterNumber: b.rosterNumber, displayName: b.displayName },
+      ),
     );
 
     if (drafts.length === 0) {

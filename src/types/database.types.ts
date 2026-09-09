@@ -724,6 +724,7 @@ export type Database = {
           class_id: string;
           school_year_id: string;
           status: string;
+          roster_number: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -733,6 +734,7 @@ export type Database = {
           class_id: string;
           school_year_id: string;
           status?: string;
+          roster_number?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -740,6 +742,7 @@ export type Database = {
           class_id?: string;
           school_year_id?: string;
           status?: string;
+          roster_number?: number | null;
           created_at?: string;
           updated_at?: string;
         };

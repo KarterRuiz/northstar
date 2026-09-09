@@ -8,19 +8,19 @@ import type { BulkAddClassOption, BulkAddRowDraft } from "./types";
 import { createEmptyBulkAddRow } from "./validate-bulk-rows";
 
 export type BulkPasteColumn =
+  | "rosterNumber"
   | "firstName"
   | "lastName"
   | "preferredName"
-  | "externalId"
   | "class"
   | "enrollmentStatus"
   | "ignore";
 
 export type BulkPasteParsedRow = {
+  rosterNumber: string;
   firstName: string;
   lastName: string;
   preferredName: string;
-  externalId: string;
   classLabel: string;
   enrollmentStatus: EnrollmentStatusForm;
 };
@@ -34,6 +34,21 @@ export type BulkPasteParseResult = {
 };
 
 const HEADER_ALIASES: Record<BulkPasteColumn, string[]> = {
+  rosterNumber: [
+    "roster #",
+    "roster number",
+    "roster",
+    "roster no",
+    "roster_no",
+    "class number",
+    "class #",
+    "seat",
+    "seat #",
+    "seat number",
+    "order",
+    "position",
+    "#",
+  ],
   firstName: ["first name", "firstname", "first", "given name", "given"],
   lastName: ["last name", "lastname", "last", "family name", "surname", "family"],
   preferredName: [
@@ -43,7 +58,10 @@ const HEADER_ALIASES: Record<BulkPasteColumn, string[]> = {
     "english name",
     "display name",
   ],
-  externalId: [
+  class: ["class", "homeroom", "classroom", "section", "class name"],
+  enrollmentStatus: ["enrollment status", "status", "enrollment"],
+  ignore: [
+    // School-wide student identifiers are not roster order — ignore in this grid.
     "student number",
     "student id",
     "student_id",
@@ -52,16 +70,12 @@ const HEADER_ALIASES: Record<BulkPasteColumn, string[]> = {
     "sis id",
     "id number",
   ],
-  class: ["class", "homeroom", "classroom", "section", "class name"],
-  enrollmentStatus: ["enrollment status", "status", "enrollment"],
-  ignore: [],
 };
 
 function splitLine(line: string): string[] {
   if (line.includes("\t")) {
     return line.split("\t").map((c) => c.trim());
   }
-  // Lightweight CSV: split on commas outside simple quotes.
   const cells: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -88,7 +102,6 @@ function mapHeaderCell(raw: string): BulkPasteColumn {
     BulkPasteColumn,
     string[],
   ][]) {
-    if (column === "ignore") continue;
     if (aliases.some((a) => a === key)) return column;
   }
   return "ignore";
@@ -102,10 +115,10 @@ function looksLikeHeader(cells: string[]): boolean {
 
 function defaultColumnMap(width: number): BulkPasteColumn[] {
   const defaults: BulkPasteColumn[] = [
+    "rosterNumber",
     "firstName",
     "lastName",
     "preferredName",
-    "externalId",
     "class",
     "enrollmentStatus",
   ];
@@ -121,14 +134,14 @@ function parseStatus(raw: string): EnrollmentStatusForm {
 
 function columnLabel(col: BulkPasteColumn): string {
   switch (col) {
+    case "rosterNumber":
+      return "Roster #";
     case "firstName":
       return "First Name";
     case "lastName":
       return "Last Name";
     case "preferredName":
       return "Preferred Name";
-    case "externalId":
-      return "Student Number";
     case "class":
       return "Class";
     case "enrollmentStatus":
@@ -140,7 +153,7 @@ function columnLabel(col: BulkPasteColumn): string {
 
 /**
  * Parse tab/newline (Excel/Sheets) or simple CSV paste into draft field values.
- * Does not write to the database.
+ * Does not write to the database. Does not live-sort rows.
  */
 export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
   const lines = raw
@@ -169,12 +182,17 @@ export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
       return (cells[idx] ?? "").trim();
     };
 
-    // Fallback positional fill when no header and only two columns.
     let firstName = get("firstName");
     let lastName = get("lastName");
     if (!usedHeader && !firstName && !lastName && cells.length >= 2) {
-      firstName = (cells[0] ?? "").trim();
-      lastName = (cells[1] ?? "").trim();
+      // If first cell is a bare number, treat as roster # + names.
+      if (/^\d+$/.test((cells[0] ?? "").trim()) && cells.length >= 3) {
+        firstName = (cells[1] ?? "").trim();
+        lastName = (cells[2] ?? "").trim();
+      } else {
+        firstName = (cells[0] ?? "").trim();
+        lastName = (cells[1] ?? "").trim();
+      }
     } else if (!usedHeader && !firstName && !lastName && cells.length === 1) {
       const tokens = (cells[0] ?? "").trim().split(/\s+/).filter(Boolean);
       if (tokens.length >= 2) {
@@ -183,15 +201,21 @@ export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
       }
     }
 
-    if (!firstName && !lastName && !get("externalId") && !get("class")) {
+    const rosterNumber =
+      get("rosterNumber") ||
+      (!usedHeader && /^\d+$/.test((cells[0] ?? "").trim())
+        ? (cells[0] ?? "").trim()
+        : "");
+
+    if (!firstName && !lastName && !rosterNumber && !get("class")) {
       continue;
     }
 
     rows.push({
+      rosterNumber,
       firstName,
       lastName,
       preferredName: get("preferredName"),
-      externalId: get("externalId"),
       classLabel: get("class"),
       enrollmentStatus: parseStatus(get("enrollmentStatus")),
     });
@@ -244,8 +268,8 @@ export type ApplyPastePlan = {
 };
 
 /**
- * Fills blank grid rows first, then appends. Counts how many populated rows
- * would be overwritten if paste is forced from the top.
+ * Fills blank grid rows first, then appends. Preserves existing row keys.
+ * Never live-sorts the grid.
  */
 export function planBulkAddPasteApply(args: {
   currentRows: BulkAddRowDraft[];
@@ -254,16 +278,24 @@ export function planBulkAddPasteApply(args: {
   makeKey: () => string;
   maxRows: number;
   forceOverwrite: boolean;
+  defaultClassId?: string;
 }): ApplyPastePlan {
-  const { currentRows, paste, classOptions, makeKey, maxRows, forceOverwrite } =
-    args;
+  const {
+    currentRows,
+    paste,
+    classOptions,
+    makeKey,
+    maxRows,
+    forceOverwrite,
+    defaultClassId = "",
+  } = args;
 
   const blankIndexes = currentRows
     .map((row, i) =>
       !row.firstName.trim() &&
       !row.lastName.trim() &&
       !row.preferredName.trim() &&
-      !row.externalId.trim() &&
+      !row.rosterNumber.trim() &&
       !row.classId.trim()
         ? i
         : -1,
@@ -278,15 +310,9 @@ export function planBulkAddPasteApply(args: {
         row.firstName.trim() ||
         row.lastName.trim() ||
         row.preferredName.trim() ||
-        row.externalId.trim() ||
+        row.rosterNumber.trim() ||
         row.classId.trim();
       if (populated) overwriteCount += 1;
-    }
-  } else {
-    const capacity = blankIndexes.length + (maxRows - currentRows.length);
-    // Overwrite risk only when forcing from top; non-force uses blanks + append.
-    if (paste.rows.length > capacity) {
-      // Not an overwrite — we'll just truncate to max later.
     }
   }
 
@@ -295,13 +321,18 @@ export function planBulkAddPasteApply(args: {
 
   const writeAt = (index: number, parsed: (typeof paste.rows)[number]) => {
     const existing = nextRows[index] ?? createEmptyBulkAddRow(makeKey());
+    const resolvedClass =
+      resolveClassId(parsed.classLabel, classOptions) ||
+      existing.classId ||
+      defaultClassId;
     nextRows[index] = {
       ...existing,
+      key: existing.key,
       firstName: parsed.firstName,
       lastName: parsed.lastName,
       preferredName: parsed.preferredName,
-      externalId: parsed.externalId,
-      classId: resolveClassId(parsed.classLabel, classOptions),
+      rosterNumber: parsed.rosterNumber,
+      classId: resolvedClass,
       enrollmentStatus: parsed.enrollmentStatus,
     };
   };
@@ -311,7 +342,7 @@ export function planBulkAddPasteApply(args: {
       if (pasteIdx < nextRows.length) {
         writeAt(pasteIdx, paste.rows[pasteIdx]!);
       } else {
-        nextRows.push(createEmptyBulkAddRow(makeKey()));
+        nextRows.push(createEmptyBulkAddRow(makeKey(), { classId: defaultClassId }));
         writeAt(pasteIdx, paste.rows[pasteIdx]!);
       }
       pasteIdx += 1;
@@ -324,7 +355,7 @@ export function planBulkAddPasteApply(args: {
     }
     while (pasteIdx < paste.rows.length && nextRows.length < maxRows) {
       const key = makeKey();
-      nextRows.push(createEmptyBulkAddRow(key));
+      nextRows.push(createEmptyBulkAddRow(key, { classId: defaultClassId }));
       writeAt(nextRows.length - 1, paste.rows[pasteIdx]!);
       pasteIdx += 1;
     }
@@ -339,11 +370,6 @@ export function planBulkAddPasteApply(args: {
   };
 }
 
-/**
- * Preview whether applying paste into blank rows only would leave leftover
- * paste rows that need new rows, and whether a top-down overwrite would hit
- * populated cells.
- */
 export function assessBulkAddPasteOverwrite(
   currentRows: BulkAddRowDraft[],
   pasteRowCount: number,
@@ -354,7 +380,7 @@ export function assessBulkAddPasteOverwrite(
       !row.firstName.trim() &&
       !row.lastName.trim() &&
       !row.preferredName.trim() &&
-      !row.externalId.trim() &&
+      !row.rosterNumber.trim() &&
       !row.classId.trim(),
   ).length;
   const appendCapacity = Math.max(0, maxRows - currentRows.length);
@@ -367,7 +393,7 @@ export function assessBulkAddPasteOverwrite(
       row.firstName.trim() ||
       row.lastName.trim() ||
       row.preferredName.trim() ||
-      row.externalId.trim() ||
+      row.rosterNumber.trim() ||
       row.classId.trim()
     ) {
       wouldOverwriteFromTop += 1;

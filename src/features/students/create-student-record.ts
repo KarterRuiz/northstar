@@ -17,6 +17,8 @@ export type CreateStudentRecordInput = {
   classId: string;
   schoolYearId: string;
   enrollmentStatus: EnrollmentStatusForm;
+  /** Class-scoped roster order. Null when not set. Distinct from externalId. */
+  rosterNumber?: number | null;
   actorUserId: string;
   auditAction?: Extract<AuditAction, "student_created" | "teacher_student_created">;
 };
@@ -66,17 +68,23 @@ export async function createStudentRecord(
     class_id: input.classId,
     school_year_id: input.schoolYearId,
     status: input.enrollmentStatus,
+    roster_number: input.rosterNumber ?? null,
   });
 
   if (enrollError) {
     logServerError("students.createStudentRecord.enroll", enrollError.message);
     await supabase.from("students").delete().eq("id", studentId);
+    const rosterConflict =
+      enrollError.message.includes("student_enrollments_active_class_roster_uidx") ||
+      enrollError.code === "23505";
     return {
       ok: false,
-      message: safeUserFacingMessage(
-        enrollError.message,
-        "Could not create the enrollment row.",
-      ),
+      message: rosterConflict
+        ? `Roster # ${input.rosterNumber} is already used in this class.`
+        : safeUserFacingMessage(
+            enrollError.message,
+            "Could not create the enrollment row.",
+          ),
     };
   }
 

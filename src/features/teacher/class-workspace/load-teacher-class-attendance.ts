@@ -9,6 +9,7 @@ import {
   attendanceStatusForClass,
   type TeacherAttendanceStatus,
 } from "@/features/teacher/dashboard/teacher-home-summaries";
+import { compareRosterOrder } from "@/features/students/roster-order";
 import {
   GENERIC_INFORMATION_LOAD_ERROR,
   logServerError,
@@ -49,6 +50,7 @@ function parseStatus(value: string | null): AttendanceStatus | null {
 export type ClassAttendanceRosterRow = {
   studentId: string;
   displayName: string;
+  rosterNumber: number | null;
   status: AttendanceStatus | null;
   notes: string | null;
 };
@@ -97,6 +99,7 @@ export const loadTeacherClassAttendance = cache(
         .select(
           `
           student_id,
+          roster_number,
           students!inner (
             id,
             first_name,
@@ -144,6 +147,11 @@ export const loadTeacherClassAttendance = cache(
 
     const roster: ClassAttendanceRosterRow[] = [];
     for (const raw of enrollmentsRes.data ?? []) {
+      const rosterNumberRaw = (raw as { roster_number?: number | null }).roster_number;
+      const rosterNumber =
+        typeof rosterNumberRaw === "number" && Number.isFinite(rosterNumberRaw)
+          ? rosterNumberRaw
+          : null;
       const student = unwrapOne(
         (raw as { students: StudentEmbed | StudentEmbed[] | null }).students,
       );
@@ -156,13 +164,17 @@ export const loadTeacherClassAttendance = cache(
           firstName: student.first_name ?? "",
           lastName: student.last_name ?? "",
         }),
+        rosterNumber,
         status: saved?.status ?? null,
         notes: saved?.notes ?? null,
       });
     }
 
     roster.sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+      compareRosterOrder(
+        { rosterNumber: a.rosterNumber, displayName: a.displayName },
+        { rosterNumber: b.rosterNumber, displayName: b.displayName },
+      ),
     );
 
     const savedTally = tallyClassAttendance(roster);

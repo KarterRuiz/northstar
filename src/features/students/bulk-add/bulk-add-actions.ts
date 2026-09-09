@@ -14,9 +14,8 @@ import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
 } from "@/features/students/enrollment-constants";
-import { normalizeMatchKey } from "@/features/students/roster-import/match-helpers";
 
-import { BULK_ADD_EXTERNAL_ID_MAX, BULK_ADD_MAX_ROWS, BULK_ADD_NAME_MAX } from "./constants";
+import { BULK_ADD_MAX_ROWS, BULK_ADD_NAME_MAX } from "./constants";
 import type {
   BulkAddCreateResult,
   BulkAddCreateRowInput,
@@ -63,9 +62,8 @@ async function authorizeBulkAdd(
 
 /**
  * Creates all provided rows using the shared student+enrollment path.
- * Policy: caller should only submit validated rows. Invalid payload fields
- * are skipped with a row-level failure (no silent create of bad data).
- * Partial success is returned when some rows fail unexpectedly mid-batch.
+ * Class roster order is stored on student_enrollments.roster_number.
+ * School-wide students.external_id is not set from this flow.
  */
 export async function createBulkStudentsAction(input: {
   dashboardRole: string;
@@ -133,36 +131,37 @@ export async function createBulkStudentsAction(input: {
     });
   }
 
-  const externalIds = input.rows
-    .map((r) => r.externalId?.trim())
-    .filter((v): v is string => Boolean(v));
+  const existingRosterByClass = new Map<string, Set<number>>();
+  if (classIds.length > 0) {
+    const { data: existingEnrollments, error: rosterError } = await supabase
+      .from("student_enrollments")
+      .select("class_id, roster_number")
+      .in("class_id", classIds)
+      .eq("status", "active")
+      .not("roster_number", "is", null);
 
-  const existingExternal = new Set<string>();
-  if (externalIds.length > 0) {
-    const { data: existingStudents, error: existingError } = await supabase
-      .from("students")
-      .select("external_id")
-      .in("external_id", externalIds);
-
-    if (existingError) {
-      logServerError("bulk-add.loadExternalIds", existingError.message);
+    if (rosterError) {
+      logServerError("bulk-add.loadRosterNumbers", rosterError.message);
       return {
         ok: false,
         message: safeUserFacingMessage(
-          existingError.message,
-          "Could not check existing student numbers. Try again.",
+          rosterError.message,
+          "Could not check existing roster numbers. Try again.",
         ),
       };
     }
 
-    for (const s of existingStudents ?? []) {
-      if (s.external_id) {
-        existingExternal.add(normalizeMatchKey(s.external_id));
-      }
+    for (const row of existingEnrollments ?? []) {
+      const classId = row.class_id;
+      const n = row.roster_number;
+      if (!classId || n == null) continue;
+      const set = existingRosterByClass.get(classId) ?? new Set<number>();
+      set.add(n);
+      existingRosterByClass.set(classId, set);
     }
   }
 
-  const seenExternal = new Set<string>();
+  const seenRosterInBatch = new Set<string>();
   const created: BulkAddCreatedRow[] = [];
   const failed: BulkAddFailedRow[] = [];
 
@@ -172,11 +171,14 @@ export async function createBulkStudentsAction(input: {
     const preferredName = row.preferredName?.trim()
       ? row.preferredName.trim().slice(0, BULK_ADD_NAME_MAX)
       : null;
-    const externalId = row.externalId?.trim()
-      ? row.externalId.trim().slice(0, BULK_ADD_EXTERNAL_ID_MAX)
-      : null;
     const classId = row.classId?.trim() ?? "";
     const status = parseEnrollmentStatus(String(row.enrollmentStatus ?? ""));
+    const rosterNumber =
+      typeof row.rosterNumber === "number" &&
+      Number.isInteger(row.rosterNumber) &&
+      row.rosterNumber >= 1
+        ? row.rosterNumber
+        : null;
 
     const fail = (message: string) => {
       failed.push({
@@ -203,17 +205,17 @@ export async function createBulkStudentsAction(input: {
       fail("Pick a valid enrollment status.");
       continue;
     }
-    if (externalId) {
-      const key = normalizeMatchKey(externalId);
-      if (seenExternal.has(key)) {
-        fail("Student number is duplicated in this batch.");
+    if (rosterNumber != null) {
+      const batchKey = `${classId}:${rosterNumber}`;
+      if (seenRosterInBatch.has(batchKey)) {
+        fail(`Roster # ${rosterNumber} is already used in this class.`);
         continue;
       }
-      if (existingExternal.has(key)) {
-        fail("That student number is already used by an existing student.");
+      if (existingRosterByClass.get(classId)?.has(rosterNumber)) {
+        fail(`Roster # ${rosterNumber} is already used in this class.`);
         continue;
       }
-      seenExternal.add(key);
+      seenRosterInBatch.add(batchKey);
     }
 
     const klass = classById.get(classId)!;
@@ -221,10 +223,11 @@ export async function createBulkStudentsAction(input: {
       firstName,
       lastName,
       preferredName,
-      externalId,
+      externalId: null,
       classId,
       schoolYearId: klass.schoolYearId,
       enrollmentStatus: status,
+      rosterNumber,
       actorUserId: auth.userId,
       auditAction: "student_created",
     });
@@ -234,8 +237,10 @@ export async function createBulkStudentsAction(input: {
       continue;
     }
 
-    if (externalId) {
-      existingExternal.add(normalizeMatchKey(externalId));
+    if (rosterNumber != null) {
+      const set = existingRosterByClass.get(classId) ?? new Set<number>();
+      set.add(rosterNumber);
+      existingRosterByClass.set(classId, set);
     }
 
     created.push({
@@ -244,13 +249,16 @@ export async function createBulkStudentsAction(input: {
       firstName,
       lastName,
       classLabel: klass.label,
-      externalId,
+      rosterNumber,
       enrollmentStatus: status,
     });
   }
 
   if (created.length > 0) {
     revalidatePath(`/dashboard/${auth.role}/students`, "page");
+    for (const classId of classIds) {
+      revalidatePath(`/dashboard/${auth.role}/classes/${classId}`, "layout");
+    }
     for (const row of created) {
       revalidatePath(`/dashboard/${auth.role}/students/${row.studentId}`, "layout");
     }

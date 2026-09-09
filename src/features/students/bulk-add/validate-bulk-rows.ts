@@ -3,11 +3,12 @@ import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
 } from "@/features/students/enrollment-constants";
-
 import {
-  BULK_ADD_EXTERNAL_ID_MAX,
-  BULK_ADD_NAME_MAX,
-} from "./constants";
+  createBulkAddRowKey,
+  parseRosterNumberInput,
+} from "@/features/students/roster-order";
+
+import { BULK_ADD_NAME_MAX } from "./constants";
 import type {
   BulkAddClassOption,
   BulkAddRowDraft,
@@ -34,7 +35,7 @@ function isBlankRow(row: BulkAddRowDraft): boolean {
     !row.firstName.trim() &&
     !row.lastName.trim() &&
     !row.preferredName.trim() &&
-    !row.externalId.trim() &&
+    !row.rosterNumber.trim() &&
     !row.classId.trim()
   );
 }
@@ -43,7 +44,7 @@ function identityKey(row: {
   firstName: string;
   lastName: string;
   preferredName: string | null;
-  externalId: string | null;
+  rosterNumber: number | null;
   classId: string;
   enrollmentStatus: string;
 }): string {
@@ -51,7 +52,7 @@ function identityKey(row: {
     normalizeMatchKey(row.firstName),
     normalizeMatchKey(row.lastName),
     normalizeMatchKey(row.preferredName ?? ""),
-    normalizeMatchKey(row.externalId ?? ""),
+    row.rosterNumber == null ? "" : String(row.rosterNumber),
     row.classId,
     row.enrollmentStatus,
   ].join("|");
@@ -59,13 +60,14 @@ function identityKey(row: {
 
 export type ValidateBulkRowsOptions = {
   classOptions: BulkAddClassOption[];
-  /** Normalized (lowercase) external IDs already in the system. */
-  existingExternalIds: Set<string>;
+  /** Optional: existing active roster numbers already in each class (classId → set). */
+  existingRosterByClass?: Map<string, Set<number>>;
 };
 
 /**
  * Validates non-blank grid rows. Blank rows are skipped.
  * Policy: ready rows are fully valid; invalid rows must be corrected before create.
+ * Does not live-sort the draft grid.
  */
 export function validateBulkAddRows(
   rows: BulkAddRowDraft[],
@@ -76,7 +78,7 @@ export function validateBulkAddRows(
   const ready: BulkAddValidatedRow[] = [];
   let skippedBlankCount = 0;
 
-  const seenExternal = new Map<string, number>();
+  const seenRosterInBatch = new Map<string, number>();
   const seenIdentity = new Map<string, number>();
 
   rows.forEach((row, index) => {
@@ -89,12 +91,10 @@ export function validateBulkAddRows(
     const firstName = row.firstName.trim();
     const lastName = row.lastName.trim();
     const preferredName = trimOptional(row.preferredName, BULK_ADD_NAME_MAX);
-    const externalIdRaw = row.externalId.trim();
-    const externalId = externalIdRaw
-      ? externalIdRaw.slice(0, BULK_ADD_EXTERNAL_ID_MAX)
-      : null;
     const classId = row.classId.trim();
     const status = parseEnrollmentStatus(row.enrollmentStatus);
+    const rosterParsed = parseRosterNumberInput(row.rosterNumber);
+    const rosterNumber = rosterParsed.ok ? rosterParsed.value : null;
 
     if (!firstName) {
       issues.push({ field: "firstName", message: "First name is required." });
@@ -121,11 +121,8 @@ export function validateBulkAddRows(
       });
     }
 
-    if (externalIdRaw.length > BULK_ADD_EXTERNAL_ID_MAX) {
-      issues.push({
-        field: "externalId",
-        message: `Student number must be at most ${BULK_ADD_EXTERNAL_ID_MAX} characters.`,
-      });
+    if (!rosterParsed.ok) {
+      issues.push({ field: "rosterNumber", message: rosterParsed.message });
     }
 
     if (!classId) {
@@ -144,32 +141,33 @@ export function validateBulkAddRows(
       });
     }
 
-    if (externalId) {
-      const key = normalizeMatchKey(externalId);
-      const prior = seenExternal.get(key);
+    if (rosterParsed.ok && rosterNumber != null && classId) {
+      const batchKey = `${classId}:${rosterNumber}`;
+      const prior = seenRosterInBatch.get(batchKey);
       if (prior != null) {
         issues.push({
-          field: "externalId",
-          message: `Student number is duplicated in this batch (also on row ${prior}).`,
+          field: "rosterNumber",
+          message: `Roster # ${rosterNumber} is already used in this class (also on row ${prior}).`,
         });
       } else {
-        seenExternal.set(key, index + 1);
+        seenRosterInBatch.set(batchKey, index + 1);
       }
 
-      if (options.existingExternalIds.has(key)) {
+      const existing = options.existingRosterByClass?.get(classId);
+      if (existing?.has(rosterNumber)) {
         issues.push({
-          field: "externalId",
-          message: "That student number is already used by an existing student.",
+          field: "rosterNumber",
+          message: `Roster # ${rosterNumber} is already used in this class.`,
         });
       }
     }
 
-    if (firstName && lastName && classId && status) {
+    if (firstName && lastName && classId && status && rosterParsed.ok) {
       const idKey = identityKey({
         firstName,
         lastName,
         preferredName,
-        externalId,
+        rosterNumber,
         classId,
         enrollmentStatus: status,
       });
@@ -196,7 +194,7 @@ export function validateBulkAddRows(
       firstName,
       lastName,
       preferredName,
-      externalId,
+      rosterNumber,
       classId,
       classLabel: klass.label,
       enrollmentStatus: status!,
@@ -213,14 +211,17 @@ export function validateBulkAddRows(
   };
 }
 
-export function createEmptyBulkAddRow(key: string): BulkAddRowDraft {
+export function createEmptyBulkAddRow(
+  key: string = createBulkAddRowKey(),
+  defaults?: { classId?: string },
+): BulkAddRowDraft {
   return {
     key,
     firstName: "",
     lastName: "",
     preferredName: "",
-    externalId: "",
-    classId: "",
+    rosterNumber: "",
+    classId: defaults?.classId ?? "",
     enrollmentStatus: "active",
   };
 }
@@ -231,4 +232,14 @@ export function isBulkAddRowBlank(row: BulkAddRowDraft): boolean {
 
 export function isBulkAddRowPopulated(row: BulkAddRowDraft): boolean {
   return !isBlankRow(row);
+}
+
+/** Asserts every row key is unique — used by regression tests. */
+export function bulkAddRowKeysAreUnique(rows: BulkAddRowDraft[]): boolean {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.key)) return false;
+    seen.add(row.key);
+  }
+  return true;
 }

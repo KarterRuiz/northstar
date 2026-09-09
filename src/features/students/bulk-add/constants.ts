@@ -11,4 +11,3 @@ export const BULK_ADD_ROW_BATCH = 5;
 export const BULK_ADD_MAX_ROWS = 50;
 
 export const BULK_ADD_NAME_MAX = 120;
-export const BULK_ADD_EXTERNAL_ID_MAX = 64;
