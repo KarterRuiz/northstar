@@ -1,5 +1,6 @@
 import "server-only";
 
+import { changeStudentClassPlacement } from "@/features/students/change-student-class-placement";
 import {
   inferCodeFromName,
   inferSortOrderFromName,
@@ -313,24 +314,36 @@ export async function applyPlannedRow(
     }
 
     if (row.existingEnrollmentId) {
-      const { error: enErr } = await supabase
-        .from("student_enrollments")
-        .update({
-          class_id: row.classId,
-          school_year_id: row.schoolYearId,
-          status: "active",
-        })
-        .eq("id", row.existingEnrollmentId);
+      if (row.existingClassId && row.existingClassId !== row.classId) {
+        // Safe transfer: never rewrite class_id on the historical enrollment row.
+        const transferred = await changeStudentClassPlacement(supabase, {
+          enrollmentId: row.existingEnrollmentId,
+          destinationClassId: row.classId,
+        });
+        if (!transferred.ok) {
+          return {
+            ok: false,
+            message: transferred.message,
+          };
+        }
+      } else {
+        const { error: enErr } = await supabase
+          .from("student_enrollments")
+          .update({
+            status: "active",
+          })
+          .eq("id", row.existingEnrollmentId);
 
-      if (enErr) {
-        logServerError("roster-import.applyPlannedRow.updateEnrollment", enErr.message);
-        return {
-          ok: false,
-          message: safeUserFacingMessage(
-            enErr.message,
-            "Could not update this student's class enrollment.",
-          ),
-        };
+        if (enErr) {
+          logServerError("roster-import.applyPlannedRow.updateEnrollment", enErr.message);
+          return {
+            ok: false,
+            message: safeUserFacingMessage(
+              enErr.message,
+              "Could not update this student's class enrollment.",
+            ),
+          };
+        }
       }
     } else {
       const { error: enErr } = await supabase.from("student_enrollments").insert({

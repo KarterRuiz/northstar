@@ -101,7 +101,8 @@ export default async function EditStudentPage({ params }: PageProps) {
             Edit student
           </h1>
           <p className="text-muted-foreground max-w-xl text-sm leading-snug">
-            Update directory fields and class placement for the current school year.
+            Update directory fields. Changing class transfers placement (previous
+            enrollment kept as withdrawn; new active enrollment created).
           </p>
         </div>
         <Button variant="outline" size="sm" className="shrink-0" asChild>

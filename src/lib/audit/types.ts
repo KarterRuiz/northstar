@@ -18,6 +18,7 @@ export const auditActions = [
   "student_profile_viewed",
   "student_created",
   "student_updated",
+  "student_class_transferred",
   "student_removed_from_class",
   "student_archived",
   "student_deleted",
@@ -121,6 +122,17 @@ export type AuditEventInput =
         studentId: string;
         /** Short human-readable summary, e.g. comma-separated changed field keys. */
         changedSummary: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "student_class_transferred";
+      metadata: {
+        studentId: string;
+        sourceEnrollmentId: string;
+        destinationEnrollmentId: string;
+        sourceClassId: string;
+        destinationClassId: string;
+        createdDestination: boolean;
       } & Record<string, AuditMetadataPrimitive>;
     })
   | (BaseAuditFields & {

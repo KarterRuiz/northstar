@@ -1349,6 +1349,13 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      transfer_student_class_placement: {
+        Args: {
+          p_enrollment_id: string;
+          p_destination_class_id: string;
+        };
+        Returns: Json;
+      };
       teacher_bulk_create_students_for_class: {
         Args: {
           p_class_id: string;

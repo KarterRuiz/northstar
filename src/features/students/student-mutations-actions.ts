@@ -9,11 +9,13 @@ import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 
+import { changeStudentClassPlacement } from "./change-student-class-placement";
 import { createStudentRecord } from "./create-student-record";
 import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
 } from "./enrollment-constants";
+import { shouldTransferEnrollment } from "./transfer-student-enrollment";
 
 export type StudentMutationState =
   | { ok: true; message?: string; studentId?: string }
@@ -238,6 +240,74 @@ export async function updateStudentAction(
   const cy = await fetchClassSchoolYearId(supabase, classId);
   if (!cy.ok) return cy;
 
+  const changed: string[] = [];
+  if (beforeStudent.first_name !== first.value) changed.push("first_name");
+  if (beforeStudent.last_name !== last.value) changed.push("last_name");
+  const prevPref = beforeStudent.preferred_name?.trim() || "";
+  const newPref = preferredName ?? "";
+  if (prevPref !== newPref) changed.push("preferred_name");
+  const prevExt = beforeStudent.external_id?.trim() || "";
+  const newExt = externalId ?? "";
+  if (prevExt !== newExt) changed.push("external_id");
+
+  let transferSourceClassId: string | null = null;
+
+  if (
+    beforeEnrollment &&
+    shouldTransferEnrollment({
+      enrollmentId: beforeEnrollment.id,
+      beforeClassId: beforeEnrollment.class_id,
+      nextClassId: classId,
+    })
+  ) {
+    // Transfer before profile update so a failed placement leaves no ambiguous state.
+    const transferred = await changeStudentClassPlacement(supabase, {
+      enrollmentId: beforeEnrollment.id,
+      destinationClassId: classId,
+    });
+    if (!transferred.ok) return transferred;
+
+    transferSourceClassId = transferred.sourceClassId;
+    changed.push("class_placement_transferred");
+
+    await recordAuditEvent({
+      action: "student_class_transferred",
+      actorUserId: auth.userId,
+      metadata: {
+        studentId,
+        sourceEnrollmentId: transferred.sourceEnrollmentId,
+        destinationEnrollmentId: transferred.destinationEnrollmentId,
+        sourceClassId: transferred.sourceClassId,
+        destinationClassId: transferred.destinationClassId,
+        createdDestination: transferred.createdDestination,
+      },
+    });
+  } else if (beforeEnrollment) {
+    if (beforeEnrollment.status !== status) {
+      const { error: updEnError } = await supabase
+        .from("student_enrollments")
+        .update({ status })
+        .eq("id", beforeEnrollment.id);
+
+      if (updEnError) {
+        return { ok: false, message: updEnError.message };
+      }
+      changed.push("enrollment_status");
+    }
+  } else {
+    const { error: insEnError } = await supabase.from("student_enrollments").insert({
+      student_id: studentId,
+      class_id: classId,
+      school_year_id: cy.schoolYearId,
+      status,
+    });
+
+    if (insEnError) {
+      return { ok: false, message: insEnError.message };
+    }
+    changed.push("enrollment_created");
+  }
+
   const { error: updStudentError } = await supabase
     .from("students")
     .update({
@@ -257,49 +327,6 @@ export async function updateStudentAction(
     return { ok: false, message: msg };
   }
 
-  if (beforeEnrollment) {
-    const { error: updEnError } = await supabase
-      .from("student_enrollments")
-      .update({
-        class_id: classId,
-        school_year_id: cy.schoolYearId,
-        status,
-      })
-      .eq("id", beforeEnrollment.id);
-
-    if (updEnError) {
-      return { ok: false, message: updEnError.message };
-    }
-  } else {
-    const { error: insEnError } = await supabase.from("student_enrollments").insert({
-      student_id: studentId,
-      class_id: classId,
-      school_year_id: cy.schoolYearId,
-      status,
-    });
-
-    if (insEnError) {
-      return { ok: false, message: insEnError.message };
-    }
-  }
-
-  const changed: string[] = [];
-  if (beforeStudent.first_name !== first.value) changed.push("first_name");
-  if (beforeStudent.last_name !== last.value) changed.push("last_name");
-  const prevPref = beforeStudent.preferred_name?.trim() || "";
-  const newPref = preferredName ?? "";
-  if (prevPref !== newPref) changed.push("preferred_name");
-  const prevExt = beforeStudent.external_id?.trim() || "";
-  const newExt = externalId ?? "";
-  if (prevExt !== newExt) changed.push("external_id");
-
-  if (beforeEnrollment) {
-    if (beforeEnrollment.class_id !== classId) changed.push("class_id");
-    if (beforeEnrollment.status !== status) changed.push("enrollment_status");
-  } else {
-    changed.push("enrollment_created");
-  }
-
   await recordAuditEvent({
     action: "student_updated",
     actorUserId: auth.userId,
@@ -314,16 +341,19 @@ export async function updateStudentAction(
   revalidatePath(`/dashboard/${auth.role}/students/${studentId}`, "layout");
   revalidatePath(`/dashboard/${auth.role}/classes/${classId}`, "layout");
   revalidatePath(`/dashboard/${auth.role}/classes/${classId}/students`, "page");
-  if (beforeEnrollment && beforeEnrollment.class_id !== classId) {
+  if (transferSourceClassId) {
+    revalidatePath(`/dashboard/${auth.role}/classes/${transferSourceClassId}`, "layout");
     revalidatePath(
-      `/dashboard/${auth.role}/classes/${beforeEnrollment.class_id}`,
-      "layout",
-    );
-    revalidatePath(
-      `/dashboard/${auth.role}/classes/${beforeEnrollment.class_id}/students`,
+      `/dashboard/${auth.role}/classes/${transferSourceClassId}/students`,
       "page",
     );
   }
 
-  return { ok: true, message: "Student updated.", studentId };
+  return {
+    ok: true,
+    message: transferSourceClassId
+      ? "Student updated. Class placement was transferred; previous enrollment kept as withdrawn."
+      : "Student updated.",
+    studentId,
+  };
 }
