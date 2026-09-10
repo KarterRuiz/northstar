@@ -9,6 +9,7 @@ import { createEmptyBulkAddRow } from "./validate-bulk-rows";
 
 export type BulkPasteColumn =
   | "rosterNumber"
+  | "studentNumber"
   | "firstName"
   | "lastName"
   | "preferredName"
@@ -18,6 +19,7 @@ export type BulkPasteColumn =
 
 export type BulkPasteParsedRow = {
   rosterNumber: string;
+  studentNumber: string;
   firstName: string;
   lastName: string;
   preferredName: string;
@@ -49,6 +51,17 @@ const HEADER_ALIASES: Record<BulkPasteColumn, string[]> = {
     "position",
     "#",
   ],
+  studentNumber: [
+    "student number",
+    "student #",
+    "student id",
+    "student_id",
+    "external id",
+    "external_id",
+    "sis id",
+    "id number",
+    "学号",
+  ],
   firstName: ["first name", "firstname", "first", "given name", "given"],
   lastName: ["last name", "lastname", "last", "family name", "surname", "family"],
   preferredName: [
@@ -60,16 +73,7 @@ const HEADER_ALIASES: Record<BulkPasteColumn, string[]> = {
   ],
   class: ["class", "homeroom", "classroom", "section", "class name"],
   enrollmentStatus: ["enrollment status", "status", "enrollment"],
-  ignore: [
-    // School-wide student identifiers are not roster order — ignore in this grid.
-    "student number",
-    "student id",
-    "student_id",
-    "external id",
-    "external_id",
-    "sis id",
-    "id number",
-  ],
+  ignore: [],
 };
 
 function splitLine(line: string): string[] {
@@ -118,6 +122,7 @@ function defaultColumnMap(width: number): BulkPasteColumn[] {
     "rosterNumber",
     "firstName",
     "lastName",
+    "studentNumber",
     "preferredName",
     "class",
     "enrollmentStatus",
@@ -136,6 +141,8 @@ function columnLabel(col: BulkPasteColumn): string {
   switch (col) {
     case "rosterNumber":
       return "Roster #";
+    case "studentNumber":
+      return "Student Number";
     case "firstName":
       return "First Name";
     case "lastName":
@@ -154,6 +161,7 @@ function columnLabel(col: BulkPasteColumn): string {
 /**
  * Parse tab/newline (Excel/Sheets) or simple CSV paste into draft field values.
  * Does not write to the database. Does not live-sort rows.
+ * Student Number maps to students.external_id — never to roster_number.
  */
 export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
   const lines = raw
@@ -207,12 +215,15 @@ export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
         ? (cells[0] ?? "").trim()
         : "");
 
-    if (!firstName && !lastName && !rosterNumber && !get("class")) {
+    const studentNumber = get("studentNumber");
+
+    if (!firstName && !lastName && !rosterNumber && !studentNumber && !get("class")) {
       continue;
     }
 
     rows.push({
       rosterNumber,
+      studentNumber,
       firstName,
       lastName,
       preferredName: get("preferredName"),
@@ -226,7 +237,7 @@ export function parseBulkAddPaste(raw: string): BulkPasteParseResult | null {
   const activeCols = columnMap.filter((c) => c !== "ignore");
   const interpretation = usedHeader
     ? `Detected header. Columns: ${activeCols.map(columnLabel).join(" · ") || "none recognized"}.`
-    : `No header detected. Assumed order: ${defaultColumnMap(Math.min(6, firstCells.length))
+    : `No header detected. Assumed order: ${defaultColumnMap(Math.min(7, firstCells.length))
         .filter((c) => c !== "ignore")
         .map(columnLabel)
         .join(" · ")}.`;
@@ -267,6 +278,17 @@ export type ApplyPastePlan = {
   interpretation: string;
 };
 
+function isRowBlankForPaste(row: BulkAddRowDraft): boolean {
+  return (
+    !row.firstName.trim() &&
+    !row.lastName.trim() &&
+    !row.preferredName.trim() &&
+    !row.studentNumber.trim() &&
+    !row.rosterNumber.trim() &&
+    !row.classId.trim()
+  );
+}
+
 /**
  * Fills blank grid rows first, then appends. Preserves existing row keys.
  * Never live-sorts the grid.
@@ -291,28 +313,14 @@ export function planBulkAddPasteApply(args: {
   } = args;
 
   const blankIndexes = currentRows
-    .map((row, i) =>
-      !row.firstName.trim() &&
-      !row.lastName.trim() &&
-      !row.preferredName.trim() &&
-      !row.rosterNumber.trim() &&
-      !row.classId.trim()
-        ? i
-        : -1,
-    )
+    .map((row, i) => (isRowBlankForPaste(row) ? i : -1))
     .filter((i) => i >= 0);
 
   let overwriteCount = 0;
   if (forceOverwrite) {
     for (let i = 0; i < Math.min(paste.rows.length, currentRows.length); i++) {
       const row = currentRows[i]!;
-      const populated =
-        row.firstName.trim() ||
-        row.lastName.trim() ||
-        row.preferredName.trim() ||
-        row.rosterNumber.trim() ||
-        row.classId.trim();
-      if (populated) overwriteCount += 1;
+      if (!isRowBlankForPaste(row)) overwriteCount += 1;
     }
   }
 
@@ -331,6 +339,7 @@ export function planBulkAddPasteApply(args: {
       firstName: parsed.firstName,
       lastName: parsed.lastName,
       preferredName: parsed.preferredName,
+      studentNumber: parsed.studentNumber,
       rosterNumber: parsed.rosterNumber,
       classId: resolvedClass,
       enrollmentStatus: parsed.enrollmentStatus,
@@ -375,27 +384,14 @@ export function assessBulkAddPasteOverwrite(
   pasteRowCount: number,
   maxRows: number,
 ): { wouldOverwriteFromTop: number; blankCapacity: number; canFitWithoutOverwrite: boolean } {
-  const blankCount = currentRows.filter(
-    (row) =>
-      !row.firstName.trim() &&
-      !row.lastName.trim() &&
-      !row.preferredName.trim() &&
-      !row.rosterNumber.trim() &&
-      !row.classId.trim(),
-  ).length;
+  const blankCount = currentRows.filter(isRowBlankForPaste).length;
   const appendCapacity = Math.max(0, maxRows - currentRows.length);
   const blankCapacity = blankCount + appendCapacity;
 
   let wouldOverwriteFromTop = 0;
   for (let i = 0; i < Math.min(pasteRowCount, currentRows.length); i++) {
     const row = currentRows[i]!;
-    if (
-      row.firstName.trim() ||
-      row.lastName.trim() ||
-      row.preferredName.trim() ||
-      row.rosterNumber.trim() ||
-      row.classId.trim()
-    ) {
+    if (!isRowBlankForPaste(row)) {
       wouldOverwriteFromTop += 1;
     }
   }

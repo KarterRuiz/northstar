@@ -76,6 +76,7 @@ export function BulkAddGrid({
                 <TableHead className="min-w-[5.5rem]">Roster #</TableHead>
                 <TableHead className="min-w-[8rem]">First *</TableHead>
                 <TableHead className="min-w-[8rem]">Last *</TableHead>
+                <TableHead className="min-w-[7.5rem]">Student # *</TableHead>
                 <TableHead className="min-w-[7rem]">Preferred</TableHead>
                 <TableHead className="min-w-[12rem]">Class *</TableHead>
                 <TableHead className="min-w-[7rem]">Status</TableHead>
@@ -92,6 +93,7 @@ export function BulkAddGrid({
                 const firstErr = fieldError(issues, "firstName");
                 const lastErr = fieldError(issues, "lastName");
                 const prefErr = fieldError(issues, "preferredName");
+                const numberErr = fieldError(issues, "studentNumber");
                 const rosterErr = fieldError(issues, "rosterNumber");
                 const classErr = fieldError(issues, "classId");
                 const statusErr = fieldError(issues, "enrollmentStatus");
@@ -100,6 +102,7 @@ export function BulkAddGrid({
                   rowMsg,
                   firstErr,
                   lastErr,
+                  numberErr,
                   classErr,
                   rosterErr,
                   statusErr,
@@ -181,6 +184,25 @@ export function BulkAddGrid({
                       </TableCell>
                       <TableCell className="p-1.5">
                         <Input
+                          value={row.studentNumber}
+                          maxLength={64}
+                          disabled={disabled}
+                          aria-label={`Row ${index + 1} student number`}
+                          aria-invalid={Boolean(numberErr) || undefined}
+                          placeholder="Required"
+                          className={cn(
+                            "h-8 font-mono text-xs",
+                            numberErr && "border-destructive",
+                          )}
+                          onChange={(e) =>
+                            onChangeRow(row.key, {
+                              studentNumber: e.target.value,
+                            })
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Input
                           value={row.preferredName}
                           maxLength={BULK_ADD_NAME_MAX}
                           disabled={disabled}
@@ -250,7 +272,7 @@ export function BulkAddGrid({
                     {errorSummary ? (
                       <TableRow className="hover:bg-transparent">
                         <TableCell
-                          colSpan={8}
+                          colSpan={9}
                           className="bg-destructive/5 px-3 py-1.5"
                         >
                           <p className="text-destructive text-xs" role="alert">
@@ -290,8 +312,8 @@ export function BulkAddGrid({
           Add {BULK_ADD_ROW_BATCH} more rows
         </Button>
         <p className="text-muted-foreground text-xs">
-          {rows.length} / {BULK_ADD_MAX_ROWS} rows · Roster # is class order
-          (1–23). Rows stay where you type them.
+          {rows.length} / {BULK_ADD_MAX_ROWS} rows · Student # is school-wide ·
+          Roster # is class order. Rows stay where you type them.
         </p>
       </div>
     </div>

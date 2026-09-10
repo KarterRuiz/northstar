@@ -10,6 +10,12 @@ import {
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isStudentId } from "@/lib/students/uuid";
 
+import {
+  isStudentNumberUniqueViolation,
+  parseStudentNumber,
+  STUDENT_NUMBER_DUPLICATE_MESSAGE,
+} from "@/features/students/student-number";
+
 import { parseBulkRosterPaste } from "./parse-bulk-roster";
 
 export type TeacherStudentMutationState =
@@ -59,6 +65,20 @@ function revalidateTeacherClassPaths(classId: string, studentId?: string) {
   }
 }
 
+function mapTeacherCreateError(message: string | undefined): string {
+  const m = message ?? "";
+  if (m.includes("Student Number is required")) {
+    return "Student Number is required.";
+  }
+  if (
+    isStudentNumberUniqueViolation(m) ||
+    m.includes("A student with this Student Number already exists")
+  ) {
+    return STUDENT_NUMBER_DUPLICATE_MESSAGE;
+  }
+  return m || "Could not create the student.";
+}
+
 export async function teacherCreateStudentAction(
   _prev: TeacherStudentMutationState | undefined,
   formData: FormData,
@@ -78,6 +98,8 @@ export async function teacherCreateStudentAction(
   if (!last.ok) return last;
 
   const preferredName = trimOptional(String(formData.get("preferredName") ?? ""), NAME_MAX);
+  const externalId = parseStudentNumber(String(formData.get("externalId") ?? ""));
+  if (!externalId.ok) return externalId;
 
   const { data: studentId, error: createError } = await gate.supabase.rpc(
     "teacher_create_student_for_class",
@@ -86,13 +108,14 @@ export async function teacherCreateStudentAction(
       p_first_name: first.value,
       p_last_name: last.value,
       p_preferred_name: preferredName,
+      p_external_id: externalId.value,
     },
   );
 
   if (createError || !studentId) {
     return {
       ok: false,
-      message: createError?.message || "Could not create the student.",
+      message: mapTeacherCreateError(createError?.message),
     };
   }
 
@@ -103,6 +126,7 @@ export async function teacherCreateStudentAction(
       studentId,
       classId,
       enrollmentStatus: "active",
+      externalId: externalId.value,
     },
   });
 
@@ -134,7 +158,13 @@ export async function teacherBulkCreateStudentsAction(
   }
 
   const failed: { line: number; message: string }[] = [];
-  const payload: { line: number; first_name: string; last_name: string }[] = [];
+  const payload: {
+    line: number;
+    first_name: string;
+    last_name: string;
+    external_id: string;
+  }[] = [];
+  const seenNumbers = new Set<string>();
 
   for (const row of parsed.rows) {
     const first = trimRequired(row.firstName, "First name");
@@ -147,11 +177,26 @@ export async function teacherBulkCreateStudentsAction(
       failed.push({ line: row.line, message: last.message });
       continue;
     }
+    const number = parseStudentNumber(row.studentNumber);
+    if (!number.ok) {
+      failed.push({ line: row.line, message: number.message });
+      continue;
+    }
+    const key = number.value.toLowerCase();
+    if (seenNumbers.has(key)) {
+      failed.push({
+        line: row.line,
+        message: "Student Number is duplicated in this paste.",
+      });
+      continue;
+    }
+    seenNumbers.add(key);
 
     payload.push({
       line: row.line,
       first_name: first.value,
       last_name: last.value,
+      external_id: number.value,
     });
   }
 
@@ -168,7 +213,7 @@ export async function teacherBulkCreateStudentsAction(
     );
 
     if (bulkError) {
-      return { ok: false, message: bulkError.message };
+      return { ok: false, message: mapTeacherCreateError(bulkError.message) };
     }
 
     const result = bulkResult as TeacherBulkCreateRpcResult | null;
@@ -186,7 +231,10 @@ export async function teacherBulkCreateStudentsAction(
           typeof item.line === "number" &&
           typeof item.message === "string"
         ) {
-          failed.push({ line: item.line, message: item.message });
+          failed.push({
+            line: item.line,
+            message: mapTeacherCreateError(item.message),
+          });
         }
       }
     }
@@ -251,6 +299,7 @@ export async function teacherUpdateStudentAction(
 
   const preferredName = trimOptional(String(formData.get("preferredName") ?? ""), NAME_MAX);
 
+  // Teachers may update names only — not Student Number (identity field).
   const { data: beforeStudent, error: beforeStudentError } = await gate.supabase
     .from("students")
     .select("id, first_name, last_name, preferred_name")

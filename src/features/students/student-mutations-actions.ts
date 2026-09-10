@@ -15,6 +15,11 @@ import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
 } from "./enrollment-constants";
+import {
+  isStudentNumberUniqueViolation,
+  parseStudentNumber,
+  STUDENT_NUMBER_DUPLICATE_MESSAGE,
+} from "./student-number";
 import { shouldTransferEnrollment } from "./transfer-student-enrollment";
 
 export type StudentMutationState =
@@ -22,7 +27,6 @@ export type StudentMutationState =
   | { ok: false; message: string };
 
 const NAME_MAX = 120;
-const EXTERNAL_ID_MAX = 64;
 
 function trimRequired(raw: string, label: string): { ok: true; value: string } | { ok: false; message: string } {
   const t = raw.trim();
@@ -117,7 +121,8 @@ export async function createStudentAction(
   if (!last.ok) return last;
 
   const preferredName = trimOptional(String(formData.get("preferredName") ?? ""), NAME_MAX);
-  const externalId = trimOptional(String(formData.get("externalId") ?? ""), EXTERNAL_ID_MAX);
+  const externalId = parseStudentNumber(String(formData.get("externalId") ?? ""));
+  if (!externalId.ok) return externalId;
 
   const classId = String(formData.get("classId") ?? "");
   if (!isUuid(classId)) {
@@ -137,7 +142,7 @@ export async function createStudentAction(
     firstName: first.value,
     lastName: last.value,
     preferredName,
-    externalId,
+    externalId: externalId.value,
     classId,
     schoolYearId: cy.schoolYearId,
     enrollmentStatus: status,
@@ -181,7 +186,8 @@ export async function updateStudentAction(
   if (!last.ok) return last;
 
   const preferredName = trimOptional(String(formData.get("preferredName") ?? ""), NAME_MAX);
-  const externalId = trimOptional(String(formData.get("externalId") ?? ""), EXTERNAL_ID_MAX);
+  const externalId = parseStudentNumber(String(formData.get("externalId") ?? ""));
+  if (!externalId.ok) return externalId;
 
   const classId = String(formData.get("classId") ?? "");
   if (!isUuid(classId)) {
@@ -247,7 +253,7 @@ export async function updateStudentAction(
   const newPref = preferredName ?? "";
   if (prevPref !== newPref) changed.push("preferred_name");
   const prevExt = beforeStudent.external_id?.trim() || "";
-  const newExt = externalId ?? "";
+  const newExt = externalId.value;
   if (prevExt !== newExt) changed.push("external_id");
 
   let transferSourceClassId: string | null = null;
@@ -314,16 +320,17 @@ export async function updateStudentAction(
       first_name: first.value,
       last_name: last.value,
       preferred_name: preferredName,
-      external_id: externalId,
+      external_id: externalId.value,
     })
     .eq("id", studentId);
 
   if (updStudentError) {
-    const msg =
-      updStudentError.message.includes("students_external_id_unique") ||
-      updStudentError.code === "23505"
-        ? "That student number (external ID) is already in use."
-        : updStudentError.message;
+    const msg = isStudentNumberUniqueViolation(
+      updStudentError.message,
+      updStudentError.code,
+    )
+      ? STUDENT_NUMBER_DUPLICATE_MESSAGE
+      : updStudentError.message;
     return { ok: false, message: msg };
   }
 
@@ -334,6 +341,9 @@ export async function updateStudentAction(
       studentId,
       changedSummary:
         changed.length > 0 ? changed.join(", ") : "no_field_changes_detected",
+      ...(changed.includes("external_id")
+        ? { previousExternalId: prevExt || null, externalId: newExt }
+        : {}),
     },
   });
 

@@ -44,8 +44,9 @@ export default async function BulkAddStudentsPage({
             Add multiple students
           </h1>
           <p className="text-muted-foreground max-w-2xl text-sm leading-snug">
-            Enter several students with class Roster # order, then review before
-            creating their records. Single-letter last names are allowed.
+            Enter several students with a required school Student Number and optional
+            class Roster #, then review before creating. Single-letter last names are
+            allowed.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -66,6 +67,7 @@ export default async function BulkAddStudentsPage({
         <BulkAddWizard
           dashboardRole={role}
           classOptions={contextLoad.classes}
+          existingStudentNumbers={contextLoad.existingStudentNumbers}
           defaultClassId={defaultClassId}
         />
       )}

@@ -6,14 +6,27 @@ import { logServerError, safeUserFacingMessage } from "@/lib/errors/safe-user-me
 import type { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import type { EnrollmentStatusForm } from "./enrollment-constants";
+import {
+  isStudentNumberUniqueViolation,
+  parseStudentNumber,
+  STUDENT_NUMBER_DUPLICATE_MESSAGE,
+} from "./student-number";
 
 type Supabase = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
+/**
+ * Shared student + enrollment create path.
+ *
+ * Identity: `students.id` = Northstar Record ID (UUID);
+ * `externalId` = school Student Number (required, unique, portable);
+ * `rosterNumber` = class-scoped only (never the Student Number).
+ */
 export type CreateStudentRecordInput = {
   firstName: string;
   lastName: string;
   preferredName: string | null;
-  externalId: string | null;
+  /** School Student Number (`students.external_id`). Required for new students. */
+  externalId: string;
   classId: string;
   schoolYearId: string;
   enrollmentStatus: EnrollmentStatusForm;
@@ -35,13 +48,16 @@ export async function createStudentRecord(
   supabase: Supabase,
   input: CreateStudentRecordInput,
 ): Promise<CreateStudentRecordResult> {
+  const parsedNumber = parseStudentNumber(input.externalId);
+  if (!parsedNumber.ok) return parsedNumber;
+
   const { data: inserted, error: insertStudentError } = await supabase
     .from("students")
     .insert({
       first_name: input.firstName,
       last_name: input.lastName,
       preferred_name: input.preferredName,
-      external_id: input.externalId,
+      external_id: parsedNumber.value,
     })
     .select("id")
     .single();
@@ -50,14 +66,15 @@ export async function createStudentRecord(
     if (insertStudentError) {
       logServerError("students.createStudentRecord.insert", insertStudentError.message);
     }
-    const msg =
-      insertStudentError?.message.includes("students_external_id_unique") ||
-      insertStudentError?.code === "23505"
-        ? "That student number (external ID) is already in use."
-        : safeUserFacingMessage(
-            insertStudentError?.message,
-            "Could not create the student.",
-          );
+    const msg = isStudentNumberUniqueViolation(
+      insertStudentError?.message,
+      insertStudentError?.code,
+    )
+      ? STUDENT_NUMBER_DUPLICATE_MESSAGE
+      : safeUserFacingMessage(
+          insertStudentError?.message,
+          "Could not create the student.",
+        );
     return { ok: false, message: msg };
   }
 
@@ -95,6 +112,7 @@ export async function createStudentRecord(
       studentId,
       classId: input.classId,
       enrollmentStatus: input.enrollmentStatus,
+      externalId: parsedNumber.value,
     },
   });
 

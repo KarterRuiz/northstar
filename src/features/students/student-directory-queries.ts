@@ -8,6 +8,7 @@ import {
   isOperationallyActiveEnrollment,
 } from "@/features/students/active-student-enrollments";
 import type { StudentListEntry } from "@/features/students/profile/types";
+import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -182,7 +183,7 @@ export const loadStudentDirectory = cache(
       const entry: StudentListEntry = {
         id: student.id,
         fullName: displayName(student),
-        studentNumber: student.external_id?.trim() || "—",
+        studentNumber: formatStudentNumberDisplay(student.external_id),
         gradeLevel: gl,
         classLabel: cl,
         status,

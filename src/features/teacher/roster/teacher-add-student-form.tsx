@@ -102,6 +102,20 @@ export function TeacherAddStudentForm({
             />
           </div>
           <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <Label htmlFor="teacher-student-number">
+              Student Number <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="teacher-student-number"
+              name="externalId"
+              required
+              className="font-mono text-sm"
+              maxLength={64}
+              placeholder="School-provided Student Number"
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
             <Label htmlFor="teacher-student-preferred">
               Preferred name <span className="text-muted-foreground">(optional)</span>
             </Label>

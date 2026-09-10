@@ -154,9 +154,10 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
       "學生編號",
       "学生编号",
     ],
-    required: false,
+    required: true,
     status: "importable",
-    description: "Maps to the student number (external ID) in NorthStar.",
+    description:
+      "School Student Number → students.external_id (required for new students; portable identity).",
   },
   {
     id: "external_id",
@@ -172,7 +173,7 @@ export const ROSTER_FIELD_CATALOG: readonly RosterFieldDefinition[] = [
     ],
     required: false,
     status: "importable",
-    description: "Alternate student number column; student number wins if both are mapped.",
+    description: "Alternate Student Number column; Student Number wins if both are mapped.",
   },
   {
     id: "grade",

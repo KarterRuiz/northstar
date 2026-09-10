@@ -37,6 +37,7 @@ import {
 import { ListEmptyState } from "@/components/workspace/list-empty-state";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-headers";
 import { assertStudentDirectoryAccess } from "@/features/students/profile/access";
+import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { StudentsAddMenu } from "@/features/students/students-add-menu";
 import { loadStudentDirectory } from "@/features/students/student-directory-queries";
 
@@ -50,12 +51,6 @@ type PageProps = {
   params: Promise<{ role: string }>;
   searchParams: Promise<{ q?: string | string[] }>;
 };
-
-function formatStudentNumber(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === "—") return "Not assigned";
-  return trimmed;
-}
 
 function formatDirectoryDash(value: string): string {
   const trimmed = value.trim();
@@ -152,7 +147,7 @@ async function StudentsDirectoryResults({
               <TableBody>
                 {result.students.map((student) => {
                   const href = `/dashboard/${role}/students/${student.id}/overview`;
-                  const numberLabel = formatStudentNumber(student.studentNumber);
+                  const numberLabel = formatStudentNumberDisplay(student.studentNumber);
                   const numberAssigned = numberLabel !== "Not assigned";
                   return (
                     <DirectoryClickableRow key={student.id}>

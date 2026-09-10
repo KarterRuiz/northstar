@@ -36,9 +36,10 @@ import { transferClassConfirmMessage } from "@/features/students/transfer-studen
 import { cn } from "@/lib/utils";
 
 import type { StudentClassOption, StudentEnrollmentChoice } from "./student-form-queries";
+import { STUDENT_NUMBER_MAX } from "./student-number";
 
 const NAME_MAX = 120;
-const EXTERNAL_ID_MAX = 64;
+const EXTERNAL_ID_MAX = STUDENT_NUMBER_MAX;
 
 /** Matches `Input` control chrome for native `<select>` elements. */
 const nativeSelectClassName = cn(
@@ -388,16 +389,16 @@ export function StudentForm({
 
         <Card className="overflow-hidden">
           <CardHeader className="border-border/60 space-y-1 border-b px-4 py-3">
-            <CardTitle className="text-base">Administrative</CardTitle>
+            <CardTitle className="text-base">Student Number</CardTitle>
             <CardDescription className="text-xs leading-snug">
-              External identifiers for SIS, exports, and integrations.
+              School-wide permanent identifier (portable). Distinct from class Roster # and
+              from the internal Northstar Record ID.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-4">
             <FieldGroup className="max-w-xl">
               <Label htmlFor="student-external" className="text-xs font-medium">
-                Student number / external ID{" "}
-                <span className="text-muted-foreground">(optional)</span>
+                Student Number <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="student-external"
@@ -405,7 +406,8 @@ export function StudentForm({
                 className="font-mono text-sm"
                 defaultValue={initialExternalId}
                 maxLength={EXTERNAL_ID_MAX}
-                placeholder="e.g. EXT-STU-0001"
+                required
+                placeholder="School-provided Student Number"
               />
             </FieldGroup>
           </CardContent>

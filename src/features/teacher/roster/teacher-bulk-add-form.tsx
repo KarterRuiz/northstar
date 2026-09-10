@@ -88,26 +88,26 @@ export function TeacherBulkAddForm({
           <CardTitle className="text-base">Paste roster</CardTitle>
           <CardDescription>
             One student per line for{" "}
-            <span className="text-foreground">{classLabel}</span>. Comma-separated names
-            work too; an optional header row is ignored.
+            <span className="text-foreground">{classLabel}</span>. Use{" "}
+            <span className="text-foreground">Student Number, First, Last</span>. An
+            optional header row is ignored.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="teacher-roster-paste">Names</Label>
+            <Label htmlFor="teacher-roster-paste">Roster lines</Label>
             <textarea
               id="teacher-roster-paste"
               name="rosterPaste"
               required
               rows={12}
-              placeholder={`First Name, Last Name\nJoey, Chen\nMaya, Zhang\nAlex Rivera`}
+              placeholder={`Student Number, First Name, Last Name\nNS-001, Joey, Chen\nNS-002, Maya, Zhang`}
               className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[12rem] w-full rounded-md border px-3 py-2 font-mono text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Examples: <code className="text-foreground">Joey, Chen</code> or{" "}
-            <code className="text-foreground">Maya Zhang</code>. Each row creates an active
-            enrollment in this class.
+            Example: <code className="text-foreground">NS-001, Joey, Chen</code>. Student
+            Number is required and must be unique school-wide.
           </p>
         </CardContent>
       </Card>

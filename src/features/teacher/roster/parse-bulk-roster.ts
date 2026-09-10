@@ -2,13 +2,16 @@ export type ParsedRosterRow = {
   line: number;
   firstName: string;
   lastName: string;
+  /** School Student Number — required. */
+  studentNumber: string;
 };
 
 export type ParseBulkRosterResult =
   | { ok: true; rows: ParsedRosterRow[] }
   | { ok: false; errors: string[] };
 
-const HEADER_RE = /^\s*first\s*name\s*[,|\t]\s*last\s*name\s*$/i;
+const HEADER_RE =
+  /^\s*student\s*(number|#|id)\s*[,|\t]\s*first\s*name\s*[,|\t]\s*last\s*name/i;
 
 function splitCsvLine(line: string): string[] {
   return line.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
@@ -20,37 +23,43 @@ function parseNameLine(line: string, lineNumber: number): ParsedRosterRow | { er
     return { error: `Line ${lineNumber}: empty row.` };
   }
 
+  // Preferred: StudentNumber, First, Last
   if (trimmed.includes(",")) {
     const parts = splitCsvLine(trimmed);
-    if (parts.length < 2) {
-      return { error: `Line ${lineNumber}: expected "First, Last" with two names.` };
+    if (parts.length < 3) {
+      return {
+        error: `Line ${lineNumber}: expected "Student Number, First, Last".`,
+      };
     }
-    const firstName = parts[0]!;
-    const lastName = parts.slice(1).join(" ");
+    const studentNumber = parts[0]!;
+    const firstName = parts[1]!;
+    const lastName = parts.slice(2).join(" ");
+    if (!studentNumber) {
+      return { error: `Line ${lineNumber}: Student Number is required.` };
+    }
     if (!firstName || !lastName) {
       return { error: `Line ${lineNumber}: first and last name are required.` };
     }
-    return { line: lineNumber, firstName, lastName };
+    return { line: lineNumber, firstName, lastName, studentNumber };
   }
 
   const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length < 2) {
+  if (tokens.length < 3) {
     return {
-      error: `Line ${lineNumber}: provide at least a first and last name (or use "First, Last").`,
+      error: `Line ${lineNumber}: provide Student Number, first name, and last name (or use "Number, First, Last").`,
     };
-  }
-  if (tokens.length === 2) {
-    return { line: lineNumber, firstName: tokens[0]!, lastName: tokens[1]! };
   }
   return {
     line: lineNumber,
-    firstName: tokens[0]!,
-    lastName: tokens.slice(1).join(" "),
+    studentNumber: tokens[0]!,
+    firstName: tokens[1]!,
+    lastName: tokens.slice(2).join(" "),
   };
 }
 
 /**
- * Parses bulk roster paste: optional CSV header, comma-separated rows, or one name per line.
+ * Parses bulk roster paste for teachers.
+ * Format: Student Number, First, Last (optional header).
  */
 export function parseBulkRosterPaste(raw: string): ParseBulkRosterResult {
   const lines = raw.split(/\r?\n/);
@@ -76,7 +85,7 @@ export function parseBulkRosterPaste(raw: string): ParseBulkRosterResult {
   }
 
   if (rows.length === 0 && errors.length === 0) {
-    return { ok: false, errors: ["Paste at least one student name."] };
+    return { ok: false, errors: ["Paste at least one student (Student Number, First, Last)."] };
   }
   if (rows.length === 0) {
     return { ok: false, errors };

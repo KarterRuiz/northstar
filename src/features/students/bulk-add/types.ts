@@ -6,6 +6,8 @@ export type BulkAddRowDraft = {
   firstName: string;
   lastName: string;
   preferredName: string;
+  /** School-wide Student Number (`students.external_id`). Required for create. */
+  studentNumber: string;
   /** Class-scoped roster position (string while editing). Not school-wide student #. */
   rosterNumber: string;
   classId: string;
@@ -16,6 +18,7 @@ export type BulkAddField =
   | "firstName"
   | "lastName"
   | "preferredName"
+  | "studentNumber"
   | "rosterNumber"
   | "classId"
   | "enrollmentStatus"
@@ -32,6 +35,7 @@ export type BulkAddValidatedRow = {
   firstName: string;
   lastName: string;
   preferredName: string | null;
+  studentNumber: string;
   rosterNumber: number | null;
   classId: string;
   classLabel: string;
@@ -58,6 +62,7 @@ export type BulkAddCreateRowInput = {
   firstName: string;
   lastName: string;
   preferredName: string | null;
+  studentNumber: string;
   rosterNumber: number | null;
   classId: string;
   enrollmentStatus: EnrollmentStatusForm;
@@ -68,6 +73,7 @@ export type BulkAddCreatedRow = {
   studentId: string;
   firstName: string;
   lastName: string;
+  studentNumber: string;
   classLabel: string;
   rosterNumber: number | null;
   enrollmentStatus: EnrollmentStatusForm;

@@ -78,19 +78,9 @@ export function StudentProfileHeader({
             </div>
 
             <dl className="text-muted-foreground grid gap-x-5 gap-y-3 text-xs sm:grid-cols-2 sm:text-sm lg:max-w-3xl">
-              <div className="space-y-1 sm:col-span-2">
-                <dt className="text-muted-foreground font-medium tracking-wide uppercase">
-                  Student ID
-                </dt>
-                <dd>
-                  <code className="text-foreground bg-muted/80 block rounded-md px-2 py-1.5 font-mono text-[11px] leading-relaxed break-all sm:text-xs">
-                    {routeStudentId}
-                  </code>
-                </dd>
-              </div>
               <div className="space-y-1">
                 <dt className="text-muted-foreground font-medium tracking-wide uppercase">
-                  Student number
+                  Student Number
                 </dt>
                 <dd className="text-foreground font-medium tabular-nums">
                   {profile.studentNumber}
@@ -116,6 +106,16 @@ export function StudentProfileHeader({
                   <Badge variant="secondary" className="capitalize">
                     {enrollmentLabel(profile.status)}
                   </Badge>
+                </dd>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <dt className="text-muted-foreground font-medium tracking-wide uppercase">
+                  Northstar Record ID
+                </dt>
+                <dd>
+                  <code className="text-muted-foreground bg-muted/40 block rounded-md px-2 py-1 font-mono text-[10px] leading-relaxed break-all sm:text-[11px]">
+                    {routeStudentId}
+                  </code>
                 </dd>
               </div>
               <div className="space-y-1 sm:col-span-2">

@@ -25,6 +25,8 @@ export function resolveExternalId(values: {
   student_number?: string;
   external_id?: string;
 }): string | null {
+  // Prefer student_number; both map to students.external_id (school Student Number).
+  // Trim only — preserve leading zeros. Never invent a number.
   const studentNumber = values.student_number?.trim() || "";
   const externalId = values.external_id?.trim() || "";
   const picked = studentNumber || externalId;

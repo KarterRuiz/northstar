@@ -393,10 +393,16 @@ export type Database = {
       };
       students: {
         Row: {
+          /** Internal permanent UUID — Northstar Record ID (not school Student Number). */
           id: string;
           first_name: string;
           last_name: string;
           preferred_name: string | null;
+          /**
+           * School Student Number — human/school-facing, unique, portable.
+           * Nullable only for legacy rows; required on all new creates.
+           * Distinct from `student_enrollments.roster_number` (class-scoped).
+           */
           external_id: string | null;
         };
         Insert: {
@@ -1380,6 +1386,8 @@ export type Database = {
           p_class_id: string;
           p_first_name: string;
           p_last_name: string;
+          /** School Student Number (`students.external_id`) — required. */
+          p_external_id: string;
           p_preferred_name?: string | null;
         };
         Returns: string;

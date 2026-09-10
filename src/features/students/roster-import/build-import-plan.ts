@@ -86,14 +86,22 @@ export function buildRosterImportPlan(
       });
     }
 
-    if (externalId) {
+    if (!externalId) {
+      issues.push({
+        rowNumber: row.rowNumber,
+        code: "missing_required_field",
+        message: "Student Number is required.",
+        field: "student_number",
+        severity: "error",
+      });
+    } else {
       const key = normalizeMatchKey(externalId);
       const prior = seenExternal.get(key);
       if (prior != null) {
         issues.push({
           rowNumber: row.rowNumber,
           code: "duplicate_student_number_in_file",
-          message: `Student number / external ID "${externalId}" is duplicated (also on row ${prior}).`,
+          message: `Student Number "${externalId}" is duplicated (also on row ${prior}).`,
           field: "student_number",
           severity: "error",
         });
@@ -179,7 +187,7 @@ export function buildRosterImportPlan(
       issues.push({
         rowNumber: row.rowNumber,
         code: "student_already_exists",
-        message: `Student number "${externalId}" already exists (${existing.firstName} ${existing.lastName}).`,
+        message: `Student Number "${externalId}" already exists (${existing.firstName} ${existing.lastName}). Will match that record instead of creating a duplicate.`,
         field: "student_number",
         severity: "warning",
       });

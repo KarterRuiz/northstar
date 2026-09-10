@@ -151,6 +151,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("1"),
         firstName: "Chris",
         lastName: "B",
+        studentNumber: "NS-B1",
         rosterNumber: "1",
         classId: CLASS_A.id,
       },
@@ -166,6 +167,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("1"),
         firstName: "A",
         lastName: "One",
+        studentNumber: "NS-A1",
         rosterNumber: "6",
         classId: CLASS_A.id,
       },
@@ -173,6 +175,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("2"),
         firstName: "B",
         lastName: "Two",
+        studentNumber: "NS-A2",
         rosterNumber: "6",
         classId: CLASS_A.id,
       },
@@ -193,6 +196,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("1"),
         firstName: "A",
         lastName: "One",
+        studentNumber: "NS-B1",
         rosterNumber: "3",
         classId: CLASS_A.id,
       },
@@ -200,6 +204,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("2"),
         firstName: "B",
         lastName: "Two",
+        studentNumber: "NS-B2",
         rosterNumber: "3",
         classId: CLASS_B.id,
       },
@@ -216,6 +221,7 @@ describe("bulk-add validation + roster #", () => {
     assert.equal(parsed.ok, false);
     const row = createEmptyBulkAddRow();
     assert.ok("rosterNumber" in row);
+    assert.ok("studentNumber" in row);
     assert.equal("externalId" in row, false);
   });
 
@@ -225,6 +231,7 @@ describe("bulk-add validation + roster #", () => {
         ...createEmptyBulkAddRow("1"),
         firstName: "A",
         lastName: "B",
+        studentNumber: "NS-Z0",
         rosterNumber: "0",
         classId: CLASS_A.id,
       },
@@ -234,6 +241,25 @@ describe("bulk-add validation + roster #", () => {
     assert.match(
       result.issuesByKey["1"]?.[0]?.message ?? "",
       /positive|whole number/i,
+    );
+  });
+
+  it("requires Student Number on ready rows", () => {
+    const rows = [
+      {
+        ...createEmptyBulkAddRow("1"),
+        firstName: "A",
+        lastName: "B",
+        studentNumber: "",
+        classId: CLASS_A.id,
+      },
+    ];
+    const result = validateBulkAddRows(rows, { classOptions: [CLASS_A] });
+    assert.equal(result.readyCount, 0);
+    assert.match(
+      result.issuesByKey["1"]?.find((i) => i.field === "studentNumber")
+        ?.message ?? "",
+      /Student Number is required/i,
     );
   });
 });

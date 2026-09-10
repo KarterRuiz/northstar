@@ -14,6 +14,10 @@ import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
 } from "@/features/students/enrollment-constants";
+import {
+  parseStudentNumber,
+  studentNumberMatchKey,
+} from "@/features/students/student-number";
 
 import { BULK_ADD_MAX_ROWS, BULK_ADD_NAME_MAX } from "./constants";
 import type {
@@ -63,7 +67,7 @@ async function authorizeBulkAdd(
 /**
  * Creates all provided rows using the shared student+enrollment path.
  * Class roster order is stored on student_enrollments.roster_number.
- * School-wide students.external_id is not set from this flow.
+ * School-wide students.external_id (Student Number) is required per row.
  */
 export async function createBulkStudentsAction(input: {
   dashboardRole: string;
@@ -162,6 +166,7 @@ export async function createBulkStudentsAction(input: {
   }
 
   const seenRosterInBatch = new Set<string>();
+  const seenStudentNumberInBatch = new Set<string>();
   const created: BulkAddCreatedRow[] = [];
   const failed: BulkAddFailedRow[] = [];
 
@@ -179,6 +184,7 @@ export async function createBulkStudentsAction(input: {
       row.rosterNumber >= 1
         ? row.rosterNumber
         : null;
+    const numberParsed = parseStudentNumber(row.studentNumber);
 
     const fail = (message: string) => {
       failed.push({
@@ -195,6 +201,15 @@ export async function createBulkStudentsAction(input: {
     }
     if (!lastName || lastName.length > BULK_ADD_NAME_MAX) {
       fail("Last name is required.");
+      continue;
+    }
+    if (!numberParsed.ok) {
+      fail(numberParsed.message);
+      continue;
+    }
+    const numberKey = studentNumberMatchKey(numberParsed.value);
+    if (seenStudentNumberInBatch.has(numberKey)) {
+      fail("Student Number is duplicated in this batch.");
       continue;
     }
     if (!isUuid(classId) || !classById.has(classId)) {
@@ -218,12 +233,14 @@ export async function createBulkStudentsAction(input: {
       seenRosterInBatch.add(batchKey);
     }
 
+    seenStudentNumberInBatch.add(numberKey);
+
     const klass = classById.get(classId)!;
     const result = await createStudentRecord(supabase, {
       firstName,
       lastName,
       preferredName,
-      externalId: null,
+      externalId: numberParsed.value,
       classId,
       schoolYearId: klass.schoolYearId,
       enrollmentStatus: status,
@@ -248,6 +265,7 @@ export async function createBulkStudentsAction(input: {
       studentId: result.studentId,
       firstName,
       lastName,
+      studentNumber: numberParsed.value,
       classLabel: klass.label,
       rosterNumber,
       enrollmentStatus: status,

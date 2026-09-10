@@ -5,6 +5,7 @@ import { cache } from "react";
 import { canManageStudents, isRole, roleLabels, type Role } from "@/config/roles";
 import { loadReportCardsForStudent } from "@/features/report-cards/load-report-cards-for-student";
 import { isOperationallyActiveEnrollment } from "@/features/students/active-student-enrollments";
+import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { assertTeacherCanAccessStudent } from "@/lib/auth/report-card-upload-role";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -197,7 +198,7 @@ export const loadStudentProfileResult = cache(
     const profile: StudentProfile = {
       id: row.id,
       fullName: displayName(row),
-      studentNumber: row.external_id?.trim() || "—",
+      studentNumber: formatStudentNumberDisplay(row.external_id),
       division: inferDivision(gname),
       gradeLevel: gname,
       homeroom,

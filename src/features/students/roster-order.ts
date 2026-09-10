@@ -1,8 +1,10 @@
 /**
  * Class-scoped roster ordering helpers.
  *
- * `students.external_id` (UI: Student #) is a school-wide permanent identifier.
- * `student_enrollments.roster_number` (UI: Roster #) is class + year position.
+ * Identity (do not merge):
+ * - `students.id` — Northstar Record ID (internal UUID)
+ * - `students.external_id` (UI: Student Number) — school-wide permanent identifier
+ * - `student_enrollments.roster_number` (UI: Roster #) — class + year position only
  */
 
 export function parseRosterNumberInput(raw: string): {

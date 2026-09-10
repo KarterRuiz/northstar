@@ -52,6 +52,8 @@ type Step = "edit" | "review" | "result";
 type BulkAddWizardProps = {
   dashboardRole: Role;
   classOptions: BulkAddClassOption[];
+  /** Match keys of Student Numbers already in Northstar. */
+  existingStudentNumbers?: string[];
   /** When launched from a class, preselect that class on new rows. */
   defaultClassId?: string | null;
 };
@@ -69,6 +71,7 @@ function makeInitialRows(classId: string): BulkAddRowDraft[] {
 export function BulkAddWizard({
   dashboardRole,
   classOptions,
+  existingStudentNumbers = [],
   defaultClassId = null,
 }: BulkAddWizardProps) {
   const defaultClass =
@@ -77,6 +80,11 @@ export function BulkAddWizard({
       : "";
 
   const makeKey = () => createBulkAddRowKey();
+
+  const existingNumberSet = useMemo(
+    () => new Set(existingStudentNumbers),
+    [existingStudentNumbers],
+  );
 
   const [step, setStep] = useState<Step>("edit");
   const [rows, setRows] = useState<BulkAddRowDraft[]>(() =>
@@ -101,8 +109,9 @@ export function BulkAddWizard({
     () =>
       validateBulkAddRows(rows, {
         classOptions,
+        existingStudentNumbers: existingNumberSet,
       }),
-    [rows, classOptions],
+    [rows, classOptions, existingNumberSet],
   );
 
   const issuesByKey =
@@ -199,6 +208,7 @@ export function BulkAddWizard({
   const goReview = () => {
     const next = validateBulkAddRows(rows, {
       classOptions,
+      existingStudentNumbers: existingNumberSet,
     });
     setShowIssues(true);
     if (next.readyCount === 0) {
@@ -230,6 +240,7 @@ export function BulkAddWizard({
           firstName: r.firstName,
           lastName: r.lastName,
           preferredName: r.preferredName,
+          studentNumber: r.studentNumber,
           rosterNumber: r.rosterNumber,
           classId: r.classId,
           enrollmentStatus: r.enrollmentStatus,
@@ -278,6 +289,7 @@ export function BulkAddWizard({
               <TableHeader>
                 <TableRow>
                   <TableHead>Roster #</TableHead>
+                  <TableHead>Student #</TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Status</TableHead>
@@ -288,6 +300,9 @@ export function BulkAddWizard({
                   <TableRow key={row.key}>
                     <TableCell className="font-mono text-xs tabular-nums">
                       {row.rosterNumber ?? "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.studentNumber}
                     </TableCell>
                     <TableCell>
                       <Link
@@ -357,6 +372,7 @@ export function BulkAddWizard({
             <TableHeader>
               <TableRow>
                 <TableHead>Roster #</TableHead>
+                <TableHead>Student #</TableHead>
                 <TableHead>Student</TableHead>
                 <TableHead>Class</TableHead>
                 <TableHead>Status</TableHead>
@@ -367,6 +383,9 @@ export function BulkAddWizard({
                 <TableRow key={row.key}>
                   <TableCell className="font-mono text-xs tabular-nums">
                     {row.rosterNumber ?? "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {row.studentNumber}
                   </TableCell>
                   <TableCell className="font-medium">
                     {row.firstName} {row.lastName}
@@ -388,9 +407,9 @@ export function BulkAddWizard({
         </div>
 
         <p className="text-muted-foreground text-xs">
-          Roster # is the class order and stays as entered. Grade follows each
-          selected class. All listed students will be created with enrollment
-          records in one action.
+          Student Number is school-wide and required. Roster # is class order and
+          stays as entered. Grade follows each selected class. All listed students
+          will be created with enrollment records in one action.
         </p>
 
         <div className="flex flex-wrap justify-end gap-2 border-t pt-3">

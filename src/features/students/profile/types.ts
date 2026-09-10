@@ -95,7 +95,7 @@ export type AuditEvent = {
 export type StudentListEntry = {
   id: string;
   fullName: string;
-  /** School-facing ID (`external_id`) or em dash when unset */
+  /** School Student Number (`students.external_id`) or em dash / Not assigned when unset */
   studentNumber: string;
   gradeLevel: string;
   classLabel: string;

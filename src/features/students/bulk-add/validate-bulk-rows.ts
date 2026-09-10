@@ -1,4 +1,3 @@
-import { normalizeMatchKey } from "@/features/students/roster-import/match-helpers";
 import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
@@ -7,6 +6,11 @@ import {
   createBulkAddRowKey,
   parseRosterNumberInput,
 } from "@/features/students/roster-order";
+import {
+  parseStudentNumber,
+  STUDENT_NUMBER_DUPLICATE_MESSAGE,
+  studentNumberMatchKey,
+} from "@/features/students/student-number";
 
 import { BULK_ADD_NAME_MAX } from "./constants";
 import type {
@@ -35,39 +39,17 @@ function isBlankRow(row: BulkAddRowDraft): boolean {
     !row.firstName.trim() &&
     !row.lastName.trim() &&
     !row.preferredName.trim() &&
+    !row.studentNumber.trim() &&
     !row.rosterNumber.trim() &&
     !row.classId.trim()
   );
 }
 
-function identityKey(row: {
-  firstName: string;
-  lastName: string;
-  preferredName: string | null;
-  rosterNumber: number | null;
-  classId: string;
-  enrollmentStatus: string;
-}): string {
-  return [
-    normalizeMatchKey(row.firstName),
-    normalizeMatchKey(row.lastName),
-    normalizeMatchKey(row.preferredName ?? ""),
-    row.rosterNumber == null ? "" : String(row.rosterNumber),
-    row.classId,
-    row.enrollmentStatus,
-  ].join("|");
-}
-
-export type ValidateBulkRowsOptions = {
-  classOptions: BulkAddClassOption[];
-  /** Optional: existing active roster numbers already in each class (classId → set). */
-  existingRosterByClass?: Map<string, Set<number>>;
-};
-
 /**
  * Validates non-blank grid rows. Blank rows are skipped.
  * Policy: ready rows are fully valid; invalid rows must be corrected before create.
- * Does not live-sort the draft grid.
+ * Student Number is required and unique within the batch (school-wide uniqueness
+ * is enforced again at insert).
  */
 export function validateBulkAddRows(
   rows: BulkAddRowDraft[],
@@ -79,7 +61,8 @@ export function validateBulkAddRows(
   let skippedBlankCount = 0;
 
   const seenRosterInBatch = new Map<string, number>();
-  const seenIdentity = new Map<string, number>();
+  const seenStudentNumber = new Map<string, number>();
+  const existingNumbers = options.existingStudentNumbers ?? new Set<string>();
 
   rows.forEach((row, index) => {
     if (isBlankRow(row)) {
@@ -95,6 +78,7 @@ export function validateBulkAddRows(
     const status = parseEnrollmentStatus(row.enrollmentStatus);
     const rosterParsed = parseRosterNumberInput(row.rosterNumber);
     const rosterNumber = rosterParsed.ok ? rosterParsed.value : null;
+    const numberParsed = parseStudentNumber(row.studentNumber);
 
     if (!firstName) {
       issues.push({ field: "firstName", message: "First name is required." });
@@ -119,6 +103,27 @@ export function validateBulkAddRows(
         field: "preferredName",
         message: `Preferred name must be at most ${BULK_ADD_NAME_MAX} characters.`,
       });
+    }
+
+    if (!numberParsed.ok) {
+      issues.push({ field: "studentNumber", message: numberParsed.message });
+    } else {
+      const key = studentNumberMatchKey(numberParsed.value);
+      const prior = seenStudentNumber.get(key);
+      if (prior != null) {
+        issues.push({
+          field: "studentNumber",
+          message: `Student Number is duplicated in this batch (also on row ${prior}).`,
+        });
+      } else {
+        seenStudentNumber.set(key, index + 1);
+      }
+      if (existingNumbers.has(key)) {
+        issues.push({
+          field: "studentNumber",
+          message: STUDENT_NUMBER_DUPLICATE_MESSAGE,
+        });
+      }
     }
 
     if (!rosterParsed.ok) {
@@ -162,28 +167,16 @@ export function validateBulkAddRows(
       }
     }
 
-    if (firstName && lastName && classId && status && rosterParsed.ok) {
-      const idKey = identityKey({
-        firstName,
-        lastName,
-        preferredName,
-        rosterNumber,
-        classId,
-        enrollmentStatus: status,
-      });
-      const prior = seenIdentity.get(idKey);
-      if (prior != null) {
-        issues.push({
-          field: "row",
-          message: `This row repeats the same student details as row ${prior}.`,
-        });
-      } else {
-        seenIdentity.set(idKey, index + 1);
-      }
-    }
-
     if (issues.length > 0) {
       issuesByKey[row.key] = issues;
+      return;
+    }
+
+    if (!numberParsed.ok || !status) {
+      issuesByKey[row.key] = [
+        ...(issuesByKey[row.key] ?? []),
+        { field: "row", message: "Row failed validation." },
+      ];
       return;
     }
 
@@ -194,10 +187,11 @@ export function validateBulkAddRows(
       firstName,
       lastName,
       preferredName,
+      studentNumber: numberParsed.value,
       rosterNumber,
       classId,
       classLabel: klass.label,
-      enrollmentStatus: status!,
+      enrollmentStatus: status,
       schoolYearId: klass.schoolYearId,
     });
   });
@@ -211,6 +205,17 @@ export function validateBulkAddRows(
   };
 }
 
+export type ValidateBulkRowsOptions = {
+  classOptions: BulkAddClassOption[];
+  /** Optional: existing active roster numbers already in each class (classId → set). */
+  existingRosterByClass?: Map<string, Set<number>>;
+  /**
+   * Optional: match keys (`studentNumberMatchKey`) of Student Numbers already in Northstar.
+   * Used to reject creates that would collide before hitting the DB.
+   */
+  existingStudentNumbers?: Set<string>;
+};
+
 export function createEmptyBulkAddRow(
   key: string = createBulkAddRowKey(),
   defaults?: { classId?: string },
@@ -220,6 +225,7 @@ export function createEmptyBulkAddRow(
     firstName: "",
     lastName: "",
     preferredName: "",
+    studentNumber: "",
     rosterNumber: "",
     classId: defaults?.classId ?? "",
     enrollmentStatus: "active",

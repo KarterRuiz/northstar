@@ -308,7 +308,7 @@ export async function applyPlannedRow(
       logServerError("roster-import.applyPlannedRow.updateStudent", updErr.message);
       const msg =
         updErr.message.includes("students_external_id_unique") || updErr.code === "23505"
-          ? "That student number is already used by another student."
+          ? "A student with this Student Number already exists."
           : safeUserFacingMessage(updErr.message, "Could not update this student.");
       return { ok: false, message: msg };
     }
@@ -389,7 +389,7 @@ export async function applyPlannedRow(
     const msg =
       insertErr?.message.includes("students_external_id_unique") ||
       insertErr?.code === "23505"
-        ? "That student number is already in use."
+        ? "A student with this Student Number already exists."
         : safeUserFacingMessage(insertErr?.message, "Could not create student.");
     return { ok: false, message: msg };
   }
