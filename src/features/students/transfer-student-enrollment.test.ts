@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  isRedundantPostTransferAttempt,
+  pickPreferredEnrollmentForEdit,
   planStudentClassTransfer,
   shouldTransferEnrollment,
+  sortEnrollmentChoicesForEdit,
   transferClassConfirmMessage,
   TRANSFER_DESTINATION_ENROLLMENT_STATUS,
   TRANSFER_SOURCE_ENROLLMENT_STATUS,
@@ -192,5 +195,112 @@ describe("transferClassConfirmMessage", () => {
     assert.match(msg, /withdrawn/);
     assert.match(msg, /new active enrollment/);
     assert.match(msg, /Attendance/);
+  });
+});
+
+describe("post-transfer edit UI state", () => {
+  const withdrawn = {
+    id: ENROLL_A,
+    status: TRANSFER_SOURCE_ENROLLMENT_STATUS,
+    label: "Grade 3 · Class 3A",
+  };
+  const activeDest = {
+    id: ENROLL_B,
+    status: TRANSFER_DESTINATION_ENROLLMENT_STATUS,
+    label: "Grade 3 · Class 3B",
+  };
+
+  it("prefers the new active enrollment after a successful transfer", () => {
+    // Label sort alone would put 3A (withdrawn) first — must still pick active 3B.
+    const preferred = pickPreferredEnrollmentForEdit([withdrawn, activeDest]);
+    assert.equal(preferred?.id, ENROLL_B);
+    assert.equal(preferred?.status, "active");
+  });
+
+  it("sorts active enrollment first so edit defaults are fresh", () => {
+    const sorted = sortEnrollmentChoicesForEdit([withdrawn, activeDest]);
+    assert.equal(sorted[0]?.id, ENROLL_B);
+    assert.equal(sorted[0]?.status, "active");
+    assert.equal(sorted[1]?.id, ENROLL_A);
+    assert.equal(sorted[1]?.status, "withdrawn");
+  });
+
+  it("keeps withdrawn enrollment only as historical (still listed)", () => {
+    const sorted = sortEnrollmentChoicesForEdit([activeDest, withdrawn]);
+    assert.equal(sorted.length, 2);
+    assert.ok(sorted.some((c) => c.id === ENROLL_A && c.status === "withdrawn"));
+    assert.ok(sorted.some((c) => c.id === ENROLL_B && c.status === "active"));
+  });
+
+  it("treats duplicate post-success submit as redundant (no false active-enrollment error)", () => {
+    assert.equal(
+      isRedundantPostTransferAttempt({
+        sourceStatus: "withdrawn",
+        sourceClassId: CLASS_3A,
+        destinationClassId: CLASS_3B,
+        destinationHasActiveEnrollment: true,
+      }),
+      true,
+    );
+  });
+
+  it("does not treat a real withdrawn→new-class attempt as redundant", () => {
+    assert.equal(
+      isRedundantPostTransferAttempt({
+        sourceStatus: "withdrawn",
+        sourceClassId: CLASS_3A,
+        destinationClassId: CLASS_3B,
+        destinationHasActiveEnrollment: false,
+      }),
+      false,
+    );
+  });
+
+  it("does not mark an active source transfer as redundant", () => {
+    assert.equal(
+      isRedundantPostTransferAttempt({
+        sourceStatus: "active",
+        sourceClassId: CLASS_3A,
+        destinationClassId: CLASS_3B,
+        destinationHasActiveEnrollment: false,
+      }),
+      false,
+    );
+  });
+
+  it("planner still errors on withdrawn source when destination is empty (no false success)", () => {
+    const plan = planStudentClassTransfer({
+      source: sourceIn3A({ status: "withdrawn" }),
+      destinationClassId: CLASS_3B,
+      destinationClassIsActive: true,
+      destinationSchoolYearId: YEAR,
+      existingActiveInDestination: null,
+    });
+    assert.equal(plan.kind, "error");
+    if (plan.kind === "error") {
+      assert.equal(plan.message, "Only an active enrollment can be transferred.");
+    }
+  });
+
+  it("after success, shouldTransferEnrollment against withdrawn source+dest class is still true (form must not re-submit)", () => {
+    // Documents why UI must redirect / lock: a stale form with old enrollmentId + new
+    // classId would still look like a transfer and hit the planner error without guards.
+    assert.equal(
+      shouldTransferEnrollment({
+        enrollmentId: ENROLL_A,
+        beforeClassId: CLASS_3A,
+        nextClassId: CLASS_3B,
+      }),
+      true,
+    );
+    assert.equal(
+      isRedundantPostTransferAttempt({
+        sourceStatus: "withdrawn",
+        sourceClassId: CLASS_3A,
+        destinationClassId: CLASS_3B,
+        destinationHasActiveEnrollment: true,
+      }),
+      true,
+    );
   });
 });

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { canManageStudents, isRole, type Role } from "@/config/roles";
 import { recordAuditEvent } from "@/lib/audit";
@@ -20,7 +21,10 @@ import {
   parseStudentNumber,
   STUDENT_NUMBER_DUPLICATE_MESSAGE,
 } from "./student-number";
-import { shouldTransferEnrollment } from "./transfer-student-enrollment";
+import {
+  isRedundantPostTransferAttempt,
+  shouldTransferEnrollment,
+} from "./transfer-student-enrollment";
 
 export type StudentMutationState =
   | { ok: true; message?: string; studentId?: string }
@@ -266,28 +270,82 @@ export async function updateStudentAction(
       nextClassId: classId,
     })
   ) {
-    // Transfer before profile update so a failed placement leaves no ambiguous state.
-    const transferred = await changeStudentClassPlacement(supabase, {
-      enrollmentId: beforeEnrollment.id,
-      destinationClassId: classId,
-    });
-    if (!transferred.ok) return transferred;
+    const { data: existingDestActive, error: existingDestErr } = await supabase
+      .from("student_enrollments")
+      .select("id")
+      .eq("student_id", studentId)
+      .eq("class_id", classId)
+      .eq("status", "active")
+      .maybeSingle();
 
-    transferSourceClassId = transferred.sourceClassId;
-    changed.push("class_placement_transferred");
+    if (existingDestErr) {
+      return { ok: false, message: existingDestErr.message };
+    }
 
-    await recordAuditEvent({
-      action: "student_class_transferred",
-      actorUserId: auth.userId,
-      metadata: {
-        studentId,
-        sourceEnrollmentId: transferred.sourceEnrollmentId,
-        destinationEnrollmentId: transferred.destinationEnrollmentId,
-        sourceClassId: transferred.sourceClassId,
-        destinationClassId: transferred.destinationClassId,
-        createdDestination: transferred.createdDestination,
-      },
-    });
+    // Duplicate submit after a successful transfer: source is already withdrawn and
+    // destination is already active — do not call transfer again or show a false error.
+    if (
+      isRedundantPostTransferAttempt({
+        sourceStatus: beforeEnrollment.status,
+        sourceClassId: beforeEnrollment.class_id,
+        destinationClassId: classId,
+        destinationHasActiveEnrollment: Boolean(existingDestActive?.id),
+      })
+    ) {
+      transferSourceClassId = beforeEnrollment.class_id;
+      changed.push("class_placement_already_transferred");
+    } else {
+      // Transfer before profile update so a failed placement leaves no ambiguous state.
+      const transferred = await changeStudentClassPlacement(supabase, {
+        enrollmentId: beforeEnrollment.id,
+        destinationClassId: classId,
+      });
+      if (!transferred.ok) {
+        // Concurrent double-submit: peer may have finished the transfer first.
+        const { data: destAfterFail } = await supabase
+          .from("student_enrollments")
+          .select("id")
+          .eq("student_id", studentId)
+          .eq("class_id", classId)
+          .eq("status", "active")
+          .maybeSingle();
+        const { data: sourceAfterFail } = await supabase
+          .from("student_enrollments")
+          .select("status")
+          .eq("id", beforeEnrollment.id)
+          .maybeSingle();
+
+        if (
+          isRedundantPostTransferAttempt({
+            sourceStatus: sourceAfterFail?.status ?? beforeEnrollment.status,
+            sourceClassId: beforeEnrollment.class_id,
+            destinationClassId: classId,
+            destinationHasActiveEnrollment: Boolean(destAfterFail?.id),
+          })
+        ) {
+          transferSourceClassId = beforeEnrollment.class_id;
+          changed.push("class_placement_already_transferred");
+        } else {
+          return transferred;
+        }
+      } else {
+        transferSourceClassId = transferred.sourceClassId;
+        changed.push("class_placement_transferred");
+
+        await recordAuditEvent({
+          action: "student_class_transferred",
+          actorUserId: auth.userId,
+          metadata: {
+            studentId,
+            sourceEnrollmentId: transferred.sourceEnrollmentId,
+            destinationEnrollmentId: transferred.destinationEnrollmentId,
+            sourceClassId: transferred.sourceClassId,
+            destinationClassId: transferred.destinationClassId,
+            createdDestination: transferred.createdDestination,
+          },
+        });
+      }
+    }
   } else if (beforeEnrollment) {
     if (beforeEnrollment.status !== status) {
       const { error: updEnError } = await supabase
@@ -357,13 +415,14 @@ export async function updateStudentAction(
       `/dashboard/${auth.role}/classes/${transferSourceClassId}/students`,
       "page",
     );
+    // Leave the edit form (stale enrollmentId / class picker) so the UI cannot
+    // re-submit transfer against the withdrawn source enrollment.
+    redirect(`/dashboard/${auth.role}/students/${studentId}/overview`);
   }
 
   return {
     ok: true,
-    message: transferSourceClassId
-      ? "Student updated. Class placement was transferred; previous enrollment kept as withdrawn."
-      : "Student updated.",
+    message: "Student updated.",
     studentId,
   };
 }

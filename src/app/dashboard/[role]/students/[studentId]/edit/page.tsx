@@ -11,6 +11,7 @@ import {
   loadStudentFormClassOptions,
 } from "@/features/students/student-form-queries";
 import { StudentForm } from "@/features/students/student-form";
+import { pickPreferredEnrollmentForEdit } from "@/features/students/transfer-student-enrollment";
 import { TeacherEditStudentForm } from "@/features/teacher/roster/teacher-edit-student-form";
 import { loadTeacherEditStudentModel } from "@/features/teacher/roster/load-teacher-roster-page";
 import { isStudentId } from "@/lib/students/uuid";
@@ -86,9 +87,11 @@ export default async function EditStudentPage({ params }: PageProps) {
     notFound();
   }
 
-  const firstEn = model.ok ? model.enrollmentChoices[0] : undefined;
-  const initialClassId = firstEn?.classId ?? "";
-  const initialEnrollmentStatus = firstEn?.status ?? "active";
+  const preferredEn = model.ok
+    ? pickPreferredEnrollmentForEdit(model.enrollmentChoices)
+    : undefined;
+  const initialClassId = preferredEn?.classId ?? "";
+  const initialEnrollmentStatus = preferredEn?.status ?? "active";
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
@@ -122,6 +125,7 @@ export default async function EditStudentPage({ params }: PageProps) {
         </p>
       ) : (
         <StudentForm
+          key={preferredEn?.id ?? model.studentId}
           dashboardRole={role}
           mode="edit"
           studentId={model.studentId}

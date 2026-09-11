@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 
 import type { Role } from "@/config/roles";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ import {
   updateStudentAction,
   type StudentMutationState,
 } from "@/features/students/student-mutations-actions";
-import { transferClassConfirmMessage } from "@/features/students/transfer-student-enrollment";
+import { transferClassConfirmMessage, pickPreferredEnrollmentForEdit } from "@/features/students/transfer-student-enrollment";
 import { cn } from "@/lib/utils";
 
 import type { StudentClassOption, StudentEnrollmentChoice } from "./student-form-queries";
@@ -113,7 +113,8 @@ export function StudentForm({
 
   const multiEnrollment = mode === "edit" && enrollmentChoices.length > 1;
 
-  const firstChoice = enrollmentChoices[0];
+  const preferredChoice = pickPreferredEnrollmentForEdit(enrollmentChoices);
+  const firstChoice = preferredChoice ?? enrollmentChoices[0];
 
   const [pickedEnrollmentId, setPickedEnrollmentId] = useState(
     firstChoice?.id ?? "",
@@ -127,6 +128,10 @@ export function StudentForm({
   );
   const [transferConfirmOpen, setTransferConfirmOpen] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<FormData | null>(null);
+  /** True from confirm click until action settles (covers the gap before `pending`). */
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  /** Sync lock so confirm cannot fire twice in the same tick. */
+  const transferSubmitLock = useRef(false);
 
   const choiceById = useMemo(() => {
     const m = new Map<string, StudentEnrollmentChoice>();
@@ -198,8 +203,18 @@ export function StudentForm({
         })
       : "";
 
+  const transferFailed = Boolean(state && !state.ok);
+  const transferInFlight =
+    pending || (transferSubmitting && !transferFailed);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     if (mode !== "edit") return;
+    // Block native re-submit while a confirmed transfer is in flight (click-through
+    // onto Save after the dialog closes used to enqueue a second transfer).
+    if (transferInFlight) {
+      event.preventDefault();
+      return;
+    }
     const form = event.currentTarget;
     const fd = new FormData(form);
     const nextClassId = String(fd.get("classId") ?? "").trim();
@@ -209,16 +224,21 @@ export function StudentForm({
       sourceClassId;
     if (enrollmentId && beforeClass && nextClassId && beforeClass !== nextClassId) {
       event.preventDefault();
+      transferSubmitLock.current = false;
+      setTransferSubmitting(false);
       setPendingFormData(fd);
       setTransferConfirmOpen(true);
     }
   }
 
   function confirmTransfer() {
-    if (!pendingFormData) return;
+    if (!pendingFormData || transferSubmitLock.current || transferInFlight) return;
+    transferSubmitLock.current = true;
+    setTransferSubmitting(true);
     const fd = pendingFormData;
     setPendingFormData(null);
-    setTransferConfirmOpen(false);
+    // Keep the dialog open (Transferring…) so the confirm click cannot fall
+    // through onto Save and fire a second updateStudentAction.
     formAction(fd);
   }
 
@@ -417,22 +437,36 @@ export function StudentForm({
           <Button variant="outline" type="button" asChild>
             <Link href={directoryHref}>Back to directory</Link>
           </Button>
-          <Button type="submit" disabled={pending}>
-            {pending ? "Saving…" : mode === "create" ? "Create student" : "Save changes"}
+          <Button type="submit" disabled={transferInFlight}>
+            {transferInFlight
+              ? "Saving…"
+              : mode === "create"
+                ? "Create student"
+                : "Save changes"}
           </Button>
         </div>
       </form>
 
       <Dialog
-        open={transferConfirmOpen}
+        open={transferConfirmOpen && !transferFailed}
         onOpenChange={(open) => {
           if (!open) {
+            if (transferInFlight) return;
             setTransferConfirmOpen(false);
             setPendingFormData(null);
+            setTransferSubmitting(false);
+            transferSubmitLock.current = false;
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(e) => {
+            if (transferInFlight) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (transferInFlight) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Transfer class placement?</DialogTitle>
             <DialogDescription>{transferConfirmCopy}</DialogDescription>
@@ -441,15 +475,23 @@ export function StudentForm({
             <Button
               type="button"
               variant="outline"
+              disabled={transferInFlight}
               onClick={() => {
+                if (transferInFlight) return;
                 setTransferConfirmOpen(false);
                 setPendingFormData(null);
+                setTransferSubmitting(false);
+                transferSubmitLock.current = false;
               }}
             >
               Cancel
             </Button>
-            <Button type="button" disabled={pending} onClick={confirmTransfer}>
-              {pending ? "Transferring…" : "Confirm transfer"}
+            <Button
+              type="button"
+              disabled={transferInFlight}
+              onClick={confirmTransfer}
+            >
+              {transferInFlight ? "Transferring…" : "Confirm transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>

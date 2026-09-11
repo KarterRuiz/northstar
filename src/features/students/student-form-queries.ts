@@ -11,6 +11,7 @@ import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
+import { sortEnrollmentChoicesForEdit } from "./transfer-student-enrollment";
 
 export type StudentClassOption = {
   id: string;
@@ -230,24 +231,25 @@ export const loadStudentEditFormModel = cache(
     const rawEn = row.student_enrollments;
     const list = Array.isArray(rawEn) ? rawEn : rawEn ? [rawEn] : [];
 
-    const enrollmentChoices: StudentEnrollmentChoice[] = list
-      .filter((e) => currentSchoolYearId && e.school_year_id === currentSchoolYearId)
-      .map((e) => {
-        const c = e.classes;
-        const klass = c
-          ? `${c.name?.trim() || "Class"}${c.section?.trim() ? ` · ${c.section.trim()}` : ""}`
-          : "Class";
-        const gl = c?.grade_levels;
-        const gname = gradeLabel(gl ?? null);
-        return {
-          id: e.id,
-          classId: e.class_id,
-          schoolYearId: e.school_year_id,
-          status: e.status,
-          label: `${gname} · ${klass}`,
-        };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+    const enrollmentChoices: StudentEnrollmentChoice[] = sortEnrollmentChoicesForEdit(
+      list
+        .filter((e) => currentSchoolYearId && e.school_year_id === currentSchoolYearId)
+        .map((e) => {
+          const c = e.classes;
+          const klass = c
+            ? `${c.name?.trim() || "Class"}${c.section?.trim() ? ` · ${c.section.trim()}` : ""}`
+            : "Class";
+          const gl = c?.grade_levels;
+          const gname = gradeLabel(gl ?? null);
+          return {
+            id: e.id,
+            classId: e.class_id,
+            schoolYearId: e.school_year_id,
+            status: e.status,
+            label: `${gname} · ${klass}`,
+          };
+        }),
+    );
 
     return {
       ok: true,

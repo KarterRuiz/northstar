@@ -127,6 +127,43 @@ export function shouldTransferEnrollment(args: {
   return args.beforeClassId !== args.nextClassId;
 }
 
+/**
+ * True when a second save still targets the old enrollment after a successful
+ * transfer already withdrew it and created/activated the destination.
+ * Used to treat duplicate post-success submits as no-op success (UI race).
+ */
+export function isRedundantPostTransferAttempt(args: {
+  sourceStatus: string;
+  sourceClassId: string;
+  destinationClassId: string;
+  destinationHasActiveEnrollment: boolean;
+}): boolean {
+  if (args.sourceClassId === args.destinationClassId) return false;
+  if (args.sourceStatus !== TRANSFER_SOURCE_ENROLLMENT_STATUS) return false;
+  return args.destinationHasActiveEnrollment;
+}
+
+/** Prefer the active enrollment for edit-form defaults; withdrawn stays historical. */
+export function pickPreferredEnrollmentForEdit<
+  T extends { id: string; status: string },
+>(choices: readonly T[]): T | undefined {
+  if (choices.length === 0) return undefined;
+  const active = choices.find((c) => c.status === "active");
+  return active ?? choices[0];
+}
+
+/** Sort edit-form enrollment choices: active first, then label. */
+export function sortEnrollmentChoicesForEdit<
+  T extends { status: string; label: string },
+>(choices: readonly T[]): T[] {
+  return [...choices].sort((a, b) => {
+    const aActive = a.status === "active" ? 0 : 1;
+    const bActive = b.status === "active" ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
+  });
+}
+
 export function transferClassConfirmMessage(args: {
   studentDisplayName?: string;
   fromClassLabel: string;
