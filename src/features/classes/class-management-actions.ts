@@ -9,6 +9,10 @@ import {
   logServerError,
   safeUserFacingMessage,
 } from "@/lib/errors/safe-user-message";
+import {
+  CLASS_SCHOOL_YEAR_LOCKED_MESSAGE,
+  classSchoolYearChangeBlocked,
+} from "@/lib/school-years/school-year-integrity";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -280,6 +284,32 @@ export async function updateClassDetailsAction(
   const klass = await loadClassForLifecycle(ctx.supabase, classId);
   if (!klass.ok) return klass;
 
+  if (klass.school_year_id !== schoolYearId) {
+    const { count, error: enrCountErr } = await ctx.supabase
+      .from("student_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("class_id", classId);
+    if (enrCountErr) {
+      logServerError("class-management.updateDetails.enrollments", enrCountErr.message);
+      return {
+        ok: false,
+        error: safeUserFacingMessage(
+          enrCountErr.message,
+          "Could not validate class enrollments. Try again.",
+        ),
+      };
+    }
+    if (
+      classSchoolYearChangeBlocked({
+        previousSchoolYearId: klass.school_year_id,
+        nextSchoolYearId: schoolYearId,
+        enrollmentCount: count ?? 0,
+      })
+    ) {
+      return { ok: false, error: CLASS_SCHOOL_YEAR_LOCKED_MESSAGE };
+    }
+  }
+
   const { data: year, error: yearErr } = await ctx.supabase
     .from("school_years")
     .select("id")
@@ -335,6 +365,12 @@ export async function updateClassDetailsAction(
     .eq("id", classId);
 
   if (error) {
+    if (
+      error.message.includes("classes.school_year_id cannot change after enrollments") ||
+      error.message.includes(CLASS_SCHOOL_YEAR_LOCKED_MESSAGE)
+    ) {
+      return { ok: false, error: CLASS_SCHOOL_YEAR_LOCKED_MESSAGE };
+    }
     return failDb("updateDetails", error.message, "Could not update class details. Try again.");
   }
 

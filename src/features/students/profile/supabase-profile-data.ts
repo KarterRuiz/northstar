@@ -12,6 +12,7 @@ import {
 } from "@/features/students/current-homeroom";
 import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { assertTeacherCanAccessStudent } from "@/lib/auth/report-card-upload-role";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -117,6 +118,7 @@ function enrollmentClass(e: EnrollmentEmbed): ClassEmbed | null {
  */
 function normalizeEnrollment(
   row: StudentEmbedRow,
+  options?: { schoolYearId?: string | null },
 ): {
   status: string;
   klass: ClassEmbed | null;
@@ -140,7 +142,9 @@ function normalizeEnrollment(
     };
   });
 
-  const resolution = resolveCurrentHomeroom(inputs);
+  const resolution = resolveCurrentHomeroom(inputs, {
+    schoolYearId: options?.schoolYearId,
+  });
   const homeroomLabel = formatHomeroomDisplay(resolution, { forAdmin: true });
   const homeroomConflict = resolution.conflict;
 
@@ -207,10 +211,11 @@ export const loadStudentProfileResult = cache(
     }
 
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from("students")
-      .select(
-        `
+    const [studentRes, currentYearRes] = await Promise.all([
+      supabase
+        .from("students")
+        .select(
+          `
         id,
         first_name,
         last_name,
@@ -224,9 +229,13 @@ export const loadStudentProfileResult = cache(
           classes ( name, section, is_active, grade_levels ( name ) )
         )
       `,
-      )
-      .eq("id", studentId)
-      .maybeSingle();
+        )
+        .eq("id", studentId)
+        .maybeSingle(),
+      loadCurrentSchoolYear(supabase),
+    ]);
+
+    const { data, error } = studentRes;
 
     if (error) {
       return { kind: "error", message: error.message };
@@ -236,7 +245,9 @@ export const loadStudentProfileResult = cache(
     }
 
     const row = data as unknown as StudentEmbedRow;
-    const en = normalizeEnrollment(row);
+    const currentSchoolYearId =
+      currentYearRes.ok && currentYearRes.year?.id ? currentYearRes.year.id : null;
+    const en = normalizeEnrollment(row, { schoolYearId: currentSchoolYearId });
     const klass = en?.klass ?? null;
     const gname = gradeName(klass);
     const homeroom = en?.homeroomLabel ?? HOMEROOM_NOT_ASSIGNED_LABEL;

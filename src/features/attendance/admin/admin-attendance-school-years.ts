@@ -1,5 +1,7 @@
 /** Shared school-year resolution for admin attendance loaders. */
 
+import { pickDefaultSchoolYearLabel } from "@/lib/school-years/school-year-integrity";
+
 export function unwrapOne<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null;
   return Array.isArray(v) ? (v[0] ?? null) : v;
@@ -25,4 +27,23 @@ export function schoolYearLabelsForFilteredClasses(
   const fallback = fallbackSchoolYear.trim();
   if (fallback) labels.add(fallback);
   return [...labels];
+}
+
+/**
+ * Operational default for admin attendance year filters.
+ * Prefer requested → `is_current` label → first listed (usually starts_on DESC).
+ */
+export function resolveAdminAttendanceSchoolYearLabel(args: {
+  yearLabels: readonly string[];
+  currentLabel?: string | null;
+  requested?: string | null;
+  termFallbackLabel?: string | null;
+}): string {
+  const picked = pickDefaultSchoolYearLabel({
+    yearLabels: args.yearLabels,
+    currentLabel: args.currentLabel,
+    requested: args.requested,
+  });
+  if (picked) return picked;
+  return args.termFallbackLabel?.trim() || "";
 }

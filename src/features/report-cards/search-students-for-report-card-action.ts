@@ -5,6 +5,7 @@ import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active
 import { resolveCurrentHomeroom } from "@/features/students/current-homeroom";
 import { getReportCardStaff } from "@/lib/auth/report-card-upload-role";
 import { logServerError } from "@/lib/errors/safe-user-message";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -52,6 +53,10 @@ export async function searchStudentsForReportCardAction(
   if (!staff || !isRole(staff.role) || !canUploadReportCards(staff.role)) {
     return { ok: false, message: "You cannot search students for report cards." };
   }
+
+  const currentYearRes = await loadCurrentSchoolYear(supabase);
+  const currentSchoolYearId =
+    currentYearRes.ok && currentYearRes.year?.id ? currentYearRes.year.id : null;
 
   const q = rawQuery.trim().slice(0, 160);
   if (q.length < 2) {
@@ -172,6 +177,7 @@ export async function searchStudentsForReportCardAction(
         classLabel: e.classLabel,
         gradeLabel: e.gradeLabel ?? undefined,
       })),
+      { schoolYearId: currentSchoolYearId },
     );
     if (resolution.kind === "not_assigned") continue;
     const chosen =

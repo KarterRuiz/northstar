@@ -19,6 +19,7 @@ import {
 } from "@/features/teacher/gradebook/report-readiness";
 import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
 import { resolveCurrentHomeroom } from "@/features/students/current-homeroom";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -95,6 +96,9 @@ export const loadStudentIntelligence = cache(
 
     const termFilter = options?.termFilter ?? "";
     const supabase = await createServerSupabaseClient();
+    const currentYearRes = await loadCurrentSchoolYear(supabase);
+    const currentSchoolYearId =
+      currentYearRes.ok && currentYearRes.year?.id ? currentYearRes.year.id : null;
 
     const { data: enrollmentRows, error: enrollError } = await supabase
       .from("student_enrollments")
@@ -158,6 +162,7 @@ export const loadStudentIntelligence = cache(
           createdAt: row.created_at,
         };
       }),
+      { schoolYearId: currentSchoolYearId },
     );
 
     if (resolution.kind === "not_assigned") {

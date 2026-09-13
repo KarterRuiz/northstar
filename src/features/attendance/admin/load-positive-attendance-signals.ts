@@ -8,10 +8,15 @@ import {
   todayIso,
   weekRangeContaining,
 } from "@/features/attendance/attendance-date-utils";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-import { schoolYearLabelsForFilteredClasses, unwrapOne } from "./admin-attendance-school-years";
+import {
+  resolveAdminAttendanceSchoolYearLabel,
+  schoolYearLabelsForFilteredClasses,
+  unwrapOne,
+} from "./admin-attendance-school-years";
 import type { AdminAttendanceSearchParams } from "./load-admin-attendance-data";
 import {
   buildPositiveAttendanceSignals,
@@ -60,7 +65,7 @@ export const loadPositiveAttendanceSignals = cache(async function loadPositiveAt
   const supabase = await createServerSupabaseClient();
   const termCtx = await loadSchoolYearTermContext();
 
-  const [schoolYearsRes, classesRes, enrollmentsRes] = await Promise.all([
+  const [schoolYearsRes, classesRes, enrollmentsRes, currentYearRes] = await Promise.all([
     supabase.from("school_years").select("label").order("starts_on", { ascending: false }),
     supabase
       .from("classes")
@@ -73,6 +78,7 @@ export const loadPositiveAttendanceSignals = cache(async function loadPositiveAt
       .from("student_enrollments")
       .select("student_id, class_id")
       .eq("status", "active"),
+    loadCurrentSchoolYear(supabase),
   ]);
 
   if (schoolYearsRes.error || classesRes.error || enrollmentsRes.error) {
@@ -82,10 +88,12 @@ export const loadPositiveAttendanceSignals = cache(async function loadPositiveAt
   const schoolYears = (schoolYearsRes.data ?? []).map((sy) => ({
     label: sy.label.trim(),
   }));
-  const schoolYearLabel =
-    params.schoolYear && schoolYears.some((sy) => sy.label === params.schoolYear)
-      ? params.schoolYear
-      : schoolYears[0]?.label ?? (termCtx.ok ? termCtx.schoolYearLabel : "");
+  const schoolYearLabel = resolveAdminAttendanceSchoolYearLabel({
+    yearLabels: schoolYears.map((sy) => sy.label),
+    currentLabel: currentYearRes.ok ? currentYearRes.year?.label ?? null : null,
+    requested: params.schoolYear,
+    termFallbackLabel: termCtx.ok ? termCtx.schoolYearLabel : null,
+  });
 
   type ClassRow = {
     id: string;

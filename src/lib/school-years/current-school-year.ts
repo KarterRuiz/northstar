@@ -8,6 +8,14 @@ import {
 } from "@/lib/errors/safe-user-message";
 import type { Database } from "@/types/database.types";
 
+export {
+  classBelongsToCurrentYear,
+  enrollmentSchoolYearMatchesClass,
+  pickDefaultSchoolYearLabel,
+  CLASS_SCHOOL_YEAR_LOCKED_MESSAGE,
+  classSchoolYearChangeBlocked,
+} from "@/lib/school-years/school-year-integrity";
+
 export type CurrentSchoolYear = {
   id: string;
   label: string;

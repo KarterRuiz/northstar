@@ -14,6 +14,7 @@ import {
 } from "@/features/students/current-homeroom";
 import type { StudentListEntry } from "@/features/students/profile/types";
 import { formatStudentNumberDisplay } from "@/features/students/student-number";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -99,6 +100,9 @@ export const loadStudentDirectory = cache(
     }
 
     const supabase = await createServerSupabaseClient();
+    const currentYearRes = await loadCurrentSchoolYear(supabase);
+    const currentSchoolYearId =
+      currentYearRes.ok && currentYearRes.year?.id ? currentYearRes.year.id : null;
     const user = await getUser();
     let teacherClassIds: string[] | null = null;
     if (user?.id) {
@@ -212,7 +216,9 @@ export const loadStudentDirectory = cache(
 
     const students: StudentListEntry[] = [];
     for (const { student, enrollments } of byStudent.values()) {
-      const resolution = resolveCurrentHomeroom(enrollments);
+      const resolution = resolveCurrentHomeroom(enrollments, {
+        schoolYearId: currentSchoolYearId,
+      });
       const classLabelStr = formatHomeroomDisplay(resolution, { forAdmin: true });
       const chosen =
         resolution.kind === "assigned"

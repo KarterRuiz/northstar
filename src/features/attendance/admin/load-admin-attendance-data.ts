@@ -22,10 +22,12 @@ import {
   tallyFromRecords,
 } from "@/features/attendance/attendance-metrics";
 import { compareAttendanceTrend, type AttendanceTrendResult } from "@/features/attendance/attendance-trend";
+import { loadCurrentSchoolYear } from "@/lib/school-years/current-school-year";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import {
+  resolveAdminAttendanceSchoolYearLabel,
   schoolYearLabelsForFilteredClasses,
   unwrapOne,
 } from "./admin-attendance-school-years";
@@ -138,7 +140,7 @@ export const loadAdminAttendanceData = cache(async function loadAdminAttendanceD
   const date = params.date ?? todayIso();
   const termCtx = await loadSchoolYearTermContext();
 
-  const [schoolYearsRes, classesRes, enrollmentsRes] = await Promise.all([
+  const [schoolYearsRes, classesRes, enrollmentsRes, currentYearRes] = await Promise.all([
     supabase.from("school_years").select("label").order("starts_on", { ascending: false }),
     supabase
       .from("classes")
@@ -151,6 +153,7 @@ export const loadAdminAttendanceData = cache(async function loadAdminAttendanceD
       .from("student_enrollments")
       .select("student_id, class_id")
       .eq("status", "active"),
+    loadCurrentSchoolYear(supabase),
   ]);
 
   const batchError =
@@ -162,10 +165,12 @@ export const loadAdminAttendanceData = cache(async function loadAdminAttendanceD
   const schoolYears = (schoolYearsRes.data ?? []).map((sy) => ({
     label: sy.label.trim(),
   }));
-  const schoolYearLabel =
-    params.schoolYear && schoolYears.some((sy) => sy.label === params.schoolYear)
-      ? params.schoolYear
-      : schoolYears[0]?.label ?? (termCtx.ok ? termCtx.schoolYearLabel : "");
+  const schoolYearLabel = resolveAdminAttendanceSchoolYearLabel({
+    yearLabels: schoolYears.map((sy) => sy.label),
+    currentLabel: currentYearRes.ok ? currentYearRes.year?.label ?? null : null,
+    requested: params.schoolYear,
+    termFallbackLabel: termCtx.ok ? termCtx.schoolYearLabel : null,
+  });
 
   const classes = (classesRes.data ?? []) as ClassRow[];
   const enrollmentByClass = new Map<string, Set<string>>();

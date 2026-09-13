@@ -66,6 +66,8 @@ export function ClassEditDetailsDialog({
   }, [open, klass]);
 
   const canSave = schoolYears.length > 0 && gradeLevels.length > 0;
+  /** Any enrollment / academic history — matches DB immutability trigger. */
+  const schoolYearLocked = !klass.deletable;
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -105,8 +107,10 @@ export function ClassEditDetailsDialog({
           <DialogHeader>
             <DialogTitle>Edit class details</DialogTitle>
             <DialogDescription>
-              Update the class name, section, school year, and grade level. Teacher assignments are
-              managed separately.
+              Update the class name, section, and grade level.
+              {schoolYearLocked
+                ? " School year is locked because this class has enrollment history."
+                : " School year can be changed only before students are enrolled."}
             </DialogDescription>
           </DialogHeader>
 
@@ -133,14 +137,22 @@ export function ClassEditDetailsDialog({
                     value={schoolYearId}
                     onChange={(e) => setSchoolYearId(e.target.value)}
                     required
-                    disabled={pending}
+                    disabled={pending || schoolYearLocked}
                   >
                     {schoolYears.map((y) => (
                       <option key={y.id} value={y.id}>
                         {y.label}
                       </option>
                     ))}
+                    {!schoolYears.some((y) => y.id === klass.school_year_id) ? (
+                      <option value={klass.school_year_id}>{klass.schoolYearLabel}</option>
+                    ) : null}
                   </select>
+                  {schoolYearLocked ? (
+                    <p className="text-muted-foreground text-xs">
+                      Historical year assignment cannot be rewritten after enrollments exist.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor={`ed-grade-${klass.id}`}>Grade level</Label>

@@ -1,16 +1,11 @@
 /** Pure Teacher Home helpers — no server I/O. */
 
+import { classBelongsToCurrentYear as classBelongsToCurrentYearShared } from "@/lib/school-years/school-year-integrity";
+
 export const TEACHER_HOME_CHECK_IN_LIMIT = 5;
 
 /** When a current year is designated, only that year's classes belong on Today. */
-export function classBelongsToCurrentYear(
-  classYearId: string | null,
-  currentYearId: string | null,
-): boolean {
-  if (!currentYearId) return true;
-  if (!classYearId) return false;
-  return classYearId === currentYearId;
-}
+export const classBelongsToCurrentYear = classBelongsToCurrentYearShared;
 
 export type TeacherAttendanceStatus = "complete" | "not_submitted" | "not_required";
 
