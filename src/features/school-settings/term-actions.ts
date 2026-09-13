@@ -6,7 +6,6 @@ import { canManageSchoolStructure, type Role } from "@/config/roles";
 import { getProfileRole } from "@/lib/auth/session";
 import {
   missingStandardTermCodes,
-  STANDARD_TERM_CODES,
   standardTermName,
   type StandardTermCode,
 } from "@/lib/school-years/school-year-integrity";
@@ -194,5 +193,3 @@ export async function updateTermDatesAction(
     message: `${existing.code} dates updated.`,
   };
 }
-
-export { STANDARD_TERM_CODES };
