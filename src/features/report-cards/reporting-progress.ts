@@ -8,8 +8,8 @@ export type ReportingCycleStatus = "not_started" | "in_progress" | "complete";
 export type ReportingTermInput = {
   code: string;
   name: string;
-  startsOn: string;
-  endsOn: string;
+  startsOn: string | null;
+  endsOn: string | null;
 };
 
 export type ReportingFileInput = {
@@ -102,23 +102,36 @@ export function resolveReportingCycle(args: {
       ...t,
       code: t.code.trim(),
       name: t.name.trim() || t.code.trim(),
+      startsOn: t.startsOn?.trim() || null,
+      endsOn: t.endsOn?.trim() || null,
     }))
     .filter((t) => t.code)
-    .sort((a, b) => a.startsOn.localeCompare(b.startsOn));
+    .sort((a, b) => {
+      // Undated terms sort after dated ones; keep code order among undated.
+      if (a.startsOn && b.startsOn) return a.startsOn.localeCompare(b.startsOn);
+      if (a.startsOn) return -1;
+      if (b.startsOn) return 1;
+      return a.code.localeCompare(b.code);
+    });
 
   if (!label || terms.length === 0) {
     return { status: "not_started", termsConfigured: false, term: null };
   }
 
-  const current = terms.find(
+  // Calendar progress only uses terms with both bounds set.
+  const dated = terms.filter((t) => t.startsOn && t.endsOn) as Array<
+    ReportingTermInput & { startsOn: string; endsOn: string }
+  >;
+
+  const current = dated.find(
     (t) => t.startsOn <= args.todayIso && args.todayIso <= t.endsOn,
   );
   if (current) {
     return { status: "in_progress", termsConfigured: true, term: current };
   }
 
-  const ended = terms.filter((t) => t.endsOn < args.todayIso);
-  if (ended.length === terms.length) {
+  const ended = dated.filter((t) => t.endsOn < args.todayIso);
+  if (dated.length > 0 && ended.length === dated.length) {
     return {
       status: "complete",
       termsConfigured: true,
@@ -137,7 +150,7 @@ export function resolveReportingCycle(args: {
   return {
     status: "not_started",
     termsConfigured: true,
-    term: terms[0] ?? null,
+    term: dated[0] ?? terms[0] ?? null,
   };
 }
 

@@ -10,6 +10,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 
 import { rowToTransitionFields, transitionFieldsToRow } from "./field-map";
+import { resolveSchoolYearIdForNewTransitionNote } from "./resolve-transition-note-year";
 import { emptyTransitionNote, type TransitionNoteFields } from "./schema";
 
 export type TransitionNoteActionResult =
@@ -98,11 +99,24 @@ export async function saveTransitionNoteDraft(
   const payload = transitionFieldsToRow(data);
 
   if (!noteId) {
+    const yearRes = await resolveSchoolYearIdForNewTransitionNote(supabase, studentId);
+    if (!yearRes.ok) {
+      return { ok: false, message: yearRes.error };
+    }
+    if (!yearRes.schoolYearId) {
+      return {
+        ok: false,
+        message:
+          "No school year is available for this note. Assign the student to a class or set a Current school year.",
+      };
+    }
+
     const { data: inserted, error } = await supabase
       .from("transition_notes")
       .insert({
         student_id: studentId,
         author_profile_id: userId,
+        school_year_id: yearRes.schoolYearId,
         status: "draft",
         ...payload,
       })
@@ -182,11 +196,24 @@ export async function submitTransitionNote(
 
   let id = noteId;
   if (!id) {
+    const yearRes = await resolveSchoolYearIdForNewTransitionNote(supabase, studentId);
+    if (!yearRes.ok) {
+      return { ok: false, message: yearRes.error };
+    }
+    if (!yearRes.schoolYearId) {
+      return {
+        ok: false,
+        message:
+          "No school year is available for this note. Assign the student to a class or set a Current school year.",
+      };
+    }
+
     const { data: inserted, error } = await supabase
       .from("transition_notes")
       .insert({
         student_id: studentId,
         author_profile_id: userId,
+        school_year_id: yearRes.schoolYearId,
         status: "draft",
         ...payload,
       })

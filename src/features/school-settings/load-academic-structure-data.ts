@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { missingStandardTermCodes } from "@/lib/school-years/school-year-integrity";
 
 import type { GradeLevelRow, SchoolYearRow } from "@/features/classes/load-class-management-data";
 import { logSchoolSettingsError } from "@/features/school-settings/safe-admin-error";
@@ -8,8 +9,30 @@ export type GradeLevelListItem = GradeLevelRow & {
   classCount: number;
 };
 
+export type TermListItem = {
+  id: string;
+  school_year_id: string;
+  code: string;
+  name: string;
+  starts_on: string | null;
+  ends_on: string | null;
+};
+
+export type CurrentYearTermsSummary = {
+  schoolYearId: string;
+  schoolYearLabel: string;
+  terms: TermListItem[];
+  missingCodes: string[];
+  datesUnsetCount: number;
+};
+
 export type AcademicStructurePageData =
-  | { ok: true; schoolYears: SchoolYearRow[]; gradeLevels: GradeLevelListItem[] }
+  | {
+      ok: true;
+      schoolYears: SchoolYearRow[];
+      gradeLevels: GradeLevelListItem[];
+      currentYearTerms: CurrentYearTermsSummary | null;
+    }
   | { ok: false; message: string };
 
 const ACADEMIC_STRUCTURE_LOAD_ERROR =
@@ -53,6 +76,33 @@ export async function loadAcademicStructurePageData(): Promise<AcademicStructure
     return { ok: false, message: ACADEMIC_STRUCTURE_LOAD_ERROR };
   }
 
+  const schoolYears = (yearsRes.data ?? []) as SchoolYearRow[];
+  const currentYear =
+    schoolYears.find((y) => y.is_current && !y.archived_at) ?? null;
+
+  let currentYearTerms: CurrentYearTermsSummary | null = null;
+  if (currentYear) {
+    const termsRes = await supabase
+      .from("terms")
+      .select("id, school_year_id, code, name, starts_on, ends_on")
+      .eq("school_year_id", currentYear.id)
+      .order("code", { ascending: true });
+
+    if (termsRes.error) {
+      logSchoolSettingsError("loadAcademicStructure.terms", termsRes.error.message);
+      return { ok: false, message: ACADEMIC_STRUCTURE_LOAD_ERROR };
+    }
+
+    const terms = (termsRes.data ?? []) as TermListItem[];
+    currentYearTerms = {
+      schoolYearId: currentYear.id,
+      schoolYearLabel: currentYear.label,
+      terms,
+      missingCodes: missingStandardTermCodes(terms.map((t) => t.code)),
+      datesUnsetCount: terms.filter((t) => !t.starts_on || !t.ends_on).length,
+    };
+  }
+
   const counts = new Map<string, number>();
   for (const row of classCountsRes.data ?? []) {
     const id = row.grade_level_id;
@@ -68,7 +118,8 @@ export async function loadAcademicStructurePageData(): Promise<AcademicStructure
 
   return {
     ok: true,
-    schoolYears: (yearsRes.data ?? []) as SchoolYearRow[],
+    schoolYears,
     gradeLevels,
+    currentYearTerms,
   };
 }

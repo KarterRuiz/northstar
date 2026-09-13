@@ -207,7 +207,7 @@ export const getAdminDashboardStats = cache(
       }
 
       const completedTermCodes = (termsRes.data ?? [])
-        .filter((t) => t.ends_on < today)
+        .filter((t) => Boolean(t.ends_on) && t.ends_on! < today)
         .map((t) => t.code.trim())
         .filter(Boolean);
 

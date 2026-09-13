@@ -25,6 +25,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 import { isRole, type Role } from "@/config/roles";
 import { isUuid } from "@/lib/students/uuid";
+import { canonicalSchoolYearLabel } from "@/lib/school-years/school-year-integrity";
 
 import { loadReportCardPreviewData } from "./load-report-card-workspace-data";
 
@@ -37,7 +38,8 @@ export type GenerateAndArchiveReportCardState =
 function sanitizeSchoolYear(value: string): string | null {
   const t = value.trim();
   if (!t || t.length > 32) return null;
-  if (/[^a-zA-Z0-9._-]/.test(t)) return null;
+  // Allow hyphen and common Unicode dashes (historical school_years.label variants).
+  if (/[^a-zA-Z0-9._\-\u2010-\u2015\u2212]/.test(t)) return null;
   return t;
 }
 
@@ -78,7 +80,9 @@ export async function generateAndArchiveReportCard(
     return { ok: false, message: "Pick a valid term (T1–T4)." };
   }
 
-  const schoolYear = sanitizeSchoolYear(String(formData.get("schoolYear") ?? ""));
+  const schoolYear = canonicalSchoolYearLabel(
+    sanitizeSchoolYear(String(formData.get("schoolYear") ?? "")),
+  );
   if (!schoolYear) {
     return { ok: false, message: "School year is required." };
   }
@@ -88,7 +92,8 @@ export async function generateAndArchiveReportCard(
     return { ok: false, message: preview.message };
   }
 
-  if (schoolYear !== preview.data.schoolYearLabel) {
+  const previewYear = canonicalSchoolYearLabel(preview.data.schoolYearLabel);
+  if (!previewYear || schoolYear !== previewYear) {
     return { ok: false, message: "School year does not match this class." };
   }
 

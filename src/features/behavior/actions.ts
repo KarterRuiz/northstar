@@ -8,6 +8,7 @@ import {
   type CreateBehaviorRecordInput,
 } from "./schema";
 import { requireTeacherCanAccessStudent } from "@/lib/auth/teacher-class-access";
+import { canonicalSchoolYearLabel } from "@/lib/school-years/school-year-integrity";
 import { isStudentId, isUuid } from "@/lib/students/uuid";
 import { supportMomentCategories } from "@/lib/student-support/quick-reasons";
 
@@ -76,9 +77,9 @@ export async function createBehaviorRecordAction(
   if (classError) return { ok: false, message: classError.message };
 
   const schoolYearEmbed = klass?.school_years;
-  const schoolYearLabel = Array.isArray(schoolYearEmbed)
-    ? schoolYearEmbed[0]?.label
-    : schoolYearEmbed?.label;
+  const schoolYearLabel = canonicalSchoolYearLabel(
+    Array.isArray(schoolYearEmbed) ? schoolYearEmbed[0] : schoolYearEmbed,
+  );
 
   if (!schoolYearLabel) {
     return { ok: false, message: "Could not resolve school year for this class." };

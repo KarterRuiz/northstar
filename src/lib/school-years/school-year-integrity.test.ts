@@ -24,11 +24,15 @@ import { planStudentClassTransfer } from "@/features/students/transfer-student-e
 
 import {
   CLASS_SCHOOL_YEAR_LOCKED_MESSAGE,
+  canonicalSchoolYearLabel,
   classBelongsToCurrentYear,
   classSchoolYearChangeBlocked,
   currentYearFlagChangeMutatesHistory,
   enrollmentSchoolYearMatchesClass,
+  missingStandardTermCodes,
   pickDefaultSchoolYearLabel,
+  resolveTransitionNoteSchoolYearId,
+  STANDARD_TERM_CODES,
 } from "./school-year-integrity";
 
 const YEAR_A = "year-2026-27";
@@ -180,5 +184,58 @@ describe("school-year integrity A–J", () => {
       }),
       false,
     );
+  });
+
+  it("canonicalSchoolYearLabel copies exact school_years.label for new text writes", () => {
+    assert.equal(canonicalSchoolYearLabel({ label: "2026-2027" }), "2026-2027");
+    assert.equal(canonicalSchoolYearLabel({ label: " 2025–2026 " }), "2025–2026");
+    assert.equal(canonicalSchoolYearLabel("2026-2027"), "2026-2027");
+    assert.equal(canonicalSchoolYearLabel(""), null);
+    assert.equal(canonicalSchoolYearLabel(null), null);
+    // Historical dash variants stay distinct — never invent unification on write.
+    assert.notEqual(
+      canonicalSchoolYearLabel("2025-2026"),
+      canonicalSchoolYearLabel("2025–2026"),
+    );
+  });
+
+  it("new transition notes resolve year from enrollment or current; null history untouched", () => {
+    assert.equal(
+      resolveTransitionNoteSchoolYearId({
+        currentYearId: YEAR_A,
+        activeEnrollmentYearIds: [YEAR_A],
+      }),
+      YEAR_A,
+    );
+    assert.equal(
+      resolveTransitionNoteSchoolYearId({
+        currentYearId: YEAR_A,
+        activeEnrollmentYearIds: [YEAR_B],
+      }),
+      YEAR_B,
+    );
+    assert.equal(
+      resolveTransitionNoteSchoolYearId({
+        currentYearId: YEAR_A,
+        activeEnrollmentYearIds: [],
+      }),
+      YEAR_A,
+    );
+    assert.equal(
+      resolveTransitionNoteSchoolYearId({
+        currentYearId: null,
+        activeEnrollmentYearIds: [],
+      }),
+      null,
+    );
+    // Historical null notes are not rewritten by this helper (callers insert-only).
+    const historicalNull: string | null = null;
+    assert.equal(historicalNull, null);
+  });
+
+  it("missingStandardTermCodes reports T1–T4 gaps for current-year setup", () => {
+    assert.deepEqual(missingStandardTermCodes([]), [...STANDARD_TERM_CODES]);
+    assert.deepEqual(missingStandardTermCodes(["T1", "T2"]), ["T3", "T4"]);
+    assert.deepEqual(missingStandardTermCodes(["t1", "T2", "T3", "T4"]), []);
   });
 });

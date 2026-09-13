@@ -82,6 +82,7 @@ export default async function SchoolSettingsPage({ params }: PageProps) {
         dashboardRole={role}
         schoolYears={ac.schoolYears}
         gradeLevels={ac.gradeLevels}
+        currentYearTerms={ac.currentYearTerms}
       />
     );
   }

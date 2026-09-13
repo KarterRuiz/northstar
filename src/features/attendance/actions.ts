@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { attendanceStatuses, type SaveAttendanceBulkInput } from "./schema";
 import { requireTeacherAssignedToClass } from "@/lib/auth/teacher-class-access";
+import { canonicalSchoolYearLabel } from "@/lib/school-years/school-year-integrity";
 import { isStudentId, isUuid } from "@/lib/students/uuid";
 
 export type AttendanceActionResult = { ok: true } | { ok: false; message: string };
@@ -29,7 +30,6 @@ export async function saveAttendanceBulkAction(
   input: SaveAttendanceBulkInput,
 ): Promise<AttendanceActionResult> {
   if (!isUuid(input.classId)) return { ok: false, message: "Invalid class id." };
-  if (!input.schoolYear.trim()) return { ok: false, message: "School year is required." };
   if (!isIsoDate(input.attendanceDate)) {
     return { ok: false, message: "Attendance date must be YYYY-MM-DD." };
   }
@@ -49,10 +49,27 @@ export async function saveAttendanceBulkAction(
 
   const { supabase, userId } = gate;
 
+  const { data: klass, error: classError } = await supabase
+    .from("classes")
+    .select("school_years ( label )")
+    .eq("id", input.classId)
+    .maybeSingle();
+
+  if (classError) return { ok: false, message: classError.message };
+
+  const schoolYearEmbed = klass?.school_years;
+  const schoolYear = canonicalSchoolYearLabel(
+    Array.isArray(schoolYearEmbed) ? schoolYearEmbed[0] : schoolYearEmbed,
+  );
+
+  if (!schoolYear) {
+    return { ok: false, message: "Could not resolve school year for this class." };
+  }
+
   const payload = input.rows.map((row) => ({
     student_id: row.studentId,
     class_id: input.classId,
-    school_year: input.schoolYear.trim(),
+    school_year: schoolYear,
     attendance_date: input.attendanceDate,
     status: row.status,
     notes: row.notes?.trim() || null,

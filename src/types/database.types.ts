@@ -1220,8 +1220,8 @@ export type Database = {
           school_year_id: string;
           name: string;
           code: string;
-          starts_on: string;
-          ends_on: string;
+          starts_on: string | null;
+          ends_on: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1230,8 +1230,8 @@ export type Database = {
           school_year_id: string;
           name: string;
           code: string;
-          starts_on: string;
-          ends_on: string;
+          starts_on?: string | null;
+          ends_on?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1240,8 +1240,8 @@ export type Database = {
           school_year_id?: string;
           name?: string;
           code?: string;
-          starts_on?: string;
-          ends_on?: string;
+          starts_on?: string | null;
+          ends_on?: string | null;
           created_at?: string;
           updated_at?: string;
         };

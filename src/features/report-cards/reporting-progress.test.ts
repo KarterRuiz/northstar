@@ -120,6 +120,25 @@ describe("resolveReportingCycle", () => {
       false,
     );
   });
+
+  it("treats undated T1–T4 scaffolding as configured but not started", () => {
+    const cycle = resolveReportingCycle({
+      schoolYearLabel: "2026-2027",
+      terms: [
+        { code: "T1", name: "Term 1", startsOn: null, endsOn: null },
+        { code: "T2", name: "Term 2", startsOn: null, endsOn: null },
+        { code: "T3", name: "Term 3", startsOn: null, endsOn: null },
+        { code: "T4", name: "Term 4", startsOn: null, endsOn: null },
+      ],
+      todayIso: "2026-09-13",
+    });
+    assert.equal(cycle.termsConfigured, true);
+    assert.equal(cycle.status, "not_started");
+    assert.equal(
+      reportingHasStarted({ cycleStatus: cycle.status, termsConfigured: true }),
+      false,
+    );
+  });
 });
 
 describe("completion and class progress", () => {

@@ -9,10 +9,15 @@ import {
 import type { Database } from "@/types/database.types";
 
 export {
+  canonicalSchoolYearLabel,
   classBelongsToCurrentYear,
   enrollmentSchoolYearMatchesClass,
+  missingStandardTermCodes,
   pickDefaultSchoolYearLabel,
+  resolveTransitionNoteSchoolYearId,
+  standardTermName,
   CLASS_SCHOOL_YEAR_LOCKED_MESSAGE,
+  STANDARD_TERM_CODES,
   classSchoolYearChangeBlocked,
 } from "@/lib/school-years/school-year-integrity";
 

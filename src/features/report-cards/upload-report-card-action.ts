@@ -19,6 +19,7 @@ import {
   buildReportCardStoragePath,
   storeReportCardPdf,
 } from "@/lib/report-cards/store-report-card-pdf";
+import { canonicalSchoolYearLabel } from "@/lib/school-years/school-year-integrity";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId } from "@/lib/students/uuid";
 import { isRole, type Role } from "@/config/roles";
@@ -51,7 +52,8 @@ function isPdfMagic(buffer: ArrayBuffer): boolean {
 function sanitizeSegment(value: string, maxLen: number): string | null {
   const t = value.trim();
   if (!t || t.length > maxLen) return null;
-  if (/[^a-zA-Z0-9._-]/.test(t)) return null;
+  // Allow hyphen and common Unicode dashes (historical school_years.label variants).
+  if (/[^a-zA-Z0-9._\-\u2010-\u2015\u2212]/.test(t)) return null;
   return t;
 }
 
@@ -114,7 +116,7 @@ export async function uploadReportCardAction(
   }
 
   const schoolYearRaw = String(formData.get("schoolYear") ?? "");
-  const schoolYear = sanitizeSegment(schoolYearRaw, 32);
+  const schoolYear = canonicalSchoolYearLabel(sanitizeSegment(schoolYearRaw, 32));
   if (!schoolYear) {
     return {
       ok: false,

@@ -238,7 +238,7 @@ export async function loadReportCardsCommandCenter(
     status: cycleResolved.status,
     termsConfigured: cycleResolved.termsConfigured,
     termEnded: Boolean(
-      cycleResolved.term && cycleResolved.term.endsOn < today,
+      cycleResolved.term?.endsOn && cycleResolved.term.endsOn < today,
     ),
     setupHref,
   };
