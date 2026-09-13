@@ -15,6 +15,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStudentId, isUuid } from "@/lib/students/uuid";
 
 import { assessStudentDeleteSafety } from "./assess-student-delete-safety";
+import { assertNoActiveHomeroomConflict } from "./assert-no-active-homeroom-conflict";
+import { activeHomeroomConflictMessage } from "./current-homeroom";
 import { studentDeleteBlockedMessage } from "./student-delete-safety";
 
 export type RosterMutationState =
@@ -436,6 +438,19 @@ export async function enrollExistingStudentInClassAction(
 
   const prior = priorRows?.[0] ?? null;
 
+  const guard = await assertNoActiveHomeroomConflict(supabase, {
+    studentId,
+    schoolYearId: klass.school_year_id,
+    nextStatus: "active",
+    excludeEnrollmentId: prior?.id ?? null,
+  });
+  if (!guard.ok) {
+    return {
+      ok: false,
+      message: `${guard.message} Use Transfer on the student edit form to move them between classes.`,
+    };
+  }
+
   let enrollmentId: string | undefined;
 
   if (prior?.id) {
@@ -448,6 +463,14 @@ export async function enrollExistingStudentInClassAction(
       .eq("id", prior.id);
     if (error) {
       logServerError("roster.enrollExisting.reactivate", error.message);
+      if (
+        error.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+      ) {
+        return {
+          ok: false,
+          message: `${activeHomeroomConflictMessage(error.message)} Use Transfer on the student edit form to move them between classes.`,
+        };
+      }
       return {
         ok: false,
         message: safeUserFacingMessage(error.message, "Could not enroll this student."),
@@ -467,6 +490,14 @@ export async function enrollExistingStudentInClassAction(
       .maybeSingle();
     if (error) {
       logServerError("roster.enrollExisting.insert", error.message);
+      if (
+        error.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+      ) {
+        return {
+          ok: false,
+          message: `${activeHomeroomConflictMessage(error.message)} Use Transfer on the student edit form to move them between classes.`,
+        };
+      }
       return {
         ok: false,
         message: safeUserFacingMessage(error.message, "Could not enroll this student."),

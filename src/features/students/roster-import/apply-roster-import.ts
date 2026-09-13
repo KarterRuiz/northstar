@@ -1,6 +1,8 @@
 import "server-only";
 
 import { changeStudentClassPlacement } from "@/features/students/change-student-class-placement";
+import { assertNoActiveHomeroomConflict } from "@/features/students/assert-no-active-homeroom-conflict";
+import { activeHomeroomConflictMessage } from "@/features/students/current-homeroom";
 import {
   inferCodeFromName,
   inferSortOrderFromName,
@@ -327,6 +329,15 @@ export async function applyPlannedRow(
           };
         }
       } else {
+        const guard = await assertNoActiveHomeroomConflict(supabase, {
+          studentId: row.existingStudentId,
+          schoolYearId: row.schoolYearId,
+          nextStatus: "active",
+          excludeEnrollmentId: row.existingEnrollmentId,
+        });
+        if (!guard.ok) {
+          return { ok: false, message: guard.message };
+        }
         const { error: enErr } = await supabase
           .from("student_enrollments")
           .update({
@@ -336,6 +347,14 @@ export async function applyPlannedRow(
 
         if (enErr) {
           logServerError("roster-import.applyPlannedRow.updateEnrollment", enErr.message);
+          if (
+            enErr.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+          ) {
+            return {
+              ok: false,
+              message: activeHomeroomConflictMessage(enErr.message),
+            };
+          }
           return {
             ok: false,
             message: safeUserFacingMessage(
@@ -346,6 +365,17 @@ export async function applyPlannedRow(
         }
       }
     } else {
+      const guard = await assertNoActiveHomeroomConflict(supabase, {
+        studentId: row.existingStudentId,
+        schoolYearId: row.schoolYearId,
+        nextStatus: "active",
+      });
+      if (!guard.ok) {
+        return {
+          ok: false,
+          message: `${guard.message} Use a class change (transfer) for this student instead of a second enrollment.`,
+        };
+      }
       const { error: enErr } = await supabase.from("student_enrollments").insert({
         student_id: row.existingStudentId,
         class_id: row.classId,
@@ -354,6 +384,14 @@ export async function applyPlannedRow(
       });
       if (enErr) {
         logServerError("roster-import.applyPlannedRow.insertEnrollment", enErr.message);
+        if (
+          enErr.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+        ) {
+          return {
+            ok: false,
+            message: activeHomeroomConflictMessage(enErr.message),
+          };
+        }
         return {
           ok: false,
           message: safeUserFacingMessage(
@@ -404,6 +442,14 @@ export async function applyPlannedRow(
   if (enErr) {
     logServerError("roster-import.applyPlannedRow.enrollNew", enErr.message);
     await supabase.from("students").delete().eq("id", inserted.id);
+    if (
+      enErr.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+    ) {
+      return {
+        ok: false,
+        message: activeHomeroomConflictMessage(enErr.message),
+      };
+    }
     return {
       ok: false,
       message: safeUserFacingMessage(enErr.message, "Could not enroll student."),

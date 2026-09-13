@@ -96,7 +96,15 @@ export function StudentProfileHeader({
                 <dt className="text-muted-foreground font-medium tracking-wide uppercase">
                   Homeroom / class
                 </dt>
-                <dd className="text-foreground font-medium leading-snug">{profile.homeroom}</dd>
+                <dd className="text-foreground font-medium leading-snug">
+                  {profile.homeroom}
+                  {profile.homeroomConflict ? (
+                    <span className="text-destructive mt-1 block text-xs font-normal normal-case">
+                      Multiple active homerooms for this school year — resolve with
+                      Transfer or withdraw extras.
+                    </span>
+                  ) : null}
+                </dd>
               </div>
               <div className="space-y-1">
                 <dt className="text-muted-foreground font-medium tracking-wide uppercase">

@@ -12,6 +12,8 @@ import { isStudentId } from "@/lib/students/uuid";
 
 import { changeStudentClassPlacement } from "./change-student-class-placement";
 import { createStudentRecord } from "./create-student-record";
+import { assertNoActiveHomeroomConflict } from "./assert-no-active-homeroom-conflict";
+import { activeHomeroomConflictMessage } from "./current-homeroom";
 import {
   ENROLLMENT_STATUSES,
   type EnrollmentStatusForm,
@@ -348,17 +350,43 @@ export async function updateStudentAction(
     }
   } else if (beforeEnrollment) {
     if (beforeEnrollment.status !== status) {
+      if (status === "active") {
+        const guard = await assertNoActiveHomeroomConflict(supabase, {
+          studentId,
+          schoolYearId: beforeEnrollment.school_year_id,
+          nextStatus: status,
+          excludeEnrollmentId: beforeEnrollment.id,
+        });
+        if (!guard.ok) return guard;
+      }
       const { error: updEnError } = await supabase
         .from("student_enrollments")
         .update({ status })
         .eq("id", beforeEnrollment.id);
 
       if (updEnError) {
+        if (
+          updEnError.message.includes(
+            "student_enrollments_one_active_homeroom_per_year_uidx",
+          )
+        ) {
+          return {
+            ok: false,
+            message: activeHomeroomConflictMessage(updEnError.message),
+          };
+        }
         return { ok: false, message: updEnError.message };
       }
       changed.push("enrollment_status");
     }
   } else {
+    const guard = await assertNoActiveHomeroomConflict(supabase, {
+      studentId,
+      schoolYearId: cy.schoolYearId,
+      nextStatus: status,
+    });
+    if (!guard.ok) return guard;
+
     const { error: insEnError } = await supabase.from("student_enrollments").insert({
       student_id: studentId,
       class_id: classId,
@@ -367,6 +395,16 @@ export async function updateStudentAction(
     });
 
     if (insEnError) {
+      if (
+        insEnError.message.includes(
+          "student_enrollments_one_active_homeroom_per_year_uidx",
+        )
+      ) {
+        return {
+          ok: false,
+          message: activeHomeroomConflictMessage(insEnError.message),
+        };
+      }
       return { ok: false, message: insEnError.message };
     }
     changed.push("enrollment_created");

@@ -4,7 +4,12 @@ import { cache } from "react";
 
 import { canManageStudents, isRole, roleLabels, type Role } from "@/config/roles";
 import { loadReportCardsForStudent } from "@/features/report-cards/load-report-cards-for-student";
-import { isOperationallyActiveEnrollment } from "@/features/students/active-student-enrollments";
+import {
+  formatHomeroomDisplay,
+  HOMEROOM_NOT_ASSIGNED_LABEL,
+  resolveCurrentHomeroom,
+  type HomeroomEnrollmentInput,
+} from "@/features/students/current-homeroom";
 import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { assertTeacherCanAccessStudent } from "@/lib/auth/report-card-upload-role";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -33,7 +38,10 @@ type ClassEmbed = {
   grade_levels: { name: string } | { name: string }[] | null;
 };
 type EnrollmentEmbed = {
+  id?: string;
   status: string;
+  school_year_id?: string;
+  class_id?: string;
   classes: ClassEmbed | ClassEmbed[] | null;
 };
 type StudentEmbedRow = {
@@ -105,29 +113,51 @@ function enrollmentClass(e: EnrollmentEmbed): ClassEmbed | null {
  * Prefer an operationally active enrollment (active status + active class).
  * If the student only has active enrollments in archived classes, treat as
  * not operationally active (inactive / no current placement).
+ * Multiple operational actives → conflict (admin surfaces warn; display uses SoT helper).
  */
 function normalizeEnrollment(
   row: StudentEmbedRow,
-): { status: string; klass: ClassEmbed | null } | null {
+): {
+  status: string;
+  klass: ClassEmbed | null;
+  homeroomLabel: string;
+  homeroomConflict: boolean;
+} | null {
   const raw = row.student_enrollments;
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   if (list.length === 0) return null;
 
-  const operational = list.filter((e) =>
-    isOperationallyActiveEnrollment({
+  const inputs: HomeroomEnrollmentInput[] = list.map((e, index) => {
+    const klass = enrollmentClass(e);
+    return {
+      id: e.id ?? `idx-${index}`,
+      classId: e.class_id ?? "",
+      schoolYearId: e.school_year_id ?? "",
       status: e.status,
-      classIsActive: enrollmentClass(e)?.is_active === true,
-    }),
-  );
+      classIsActive: klass?.is_active === true,
+      classLabel: classLabel(klass),
+      gradeLabel: gradeName(klass),
+    };
+  });
 
-  if (operational.length > 0) {
-    const ranked = [...operational].sort((a, b) =>
-      classLabel(enrollmentClass(a)).localeCompare(
-        classLabel(enrollmentClass(b)),
-      ),
-    );
-    const first = ranked[0]!;
-    return { status: first.status, klass: enrollmentClass(first) };
+  const resolution = resolveCurrentHomeroom(inputs);
+  const homeroomLabel = formatHomeroomDisplay(resolution, { forAdmin: true });
+  const homeroomConflict = resolution.conflict;
+
+  if (resolution.kind === "assigned" || resolution.kind === "conflict") {
+    const chosen =
+      resolution.kind === "assigned" ? resolution.enrollment : resolution.preferred;
+    const klass =
+      list
+        .map((e) => ({ e, klass: enrollmentClass(e) }))
+        .find((x) => (x.e.id ?? "") === chosen.id || classLabel(x.klass) === chosen.classLabel)
+        ?.klass ?? null;
+    return {
+      status: chosen.status,
+      klass,
+      homeroomLabel,
+      homeroomConflict,
+    };
   }
 
   // Active-only-in-archived → not operationally active.
@@ -138,7 +168,12 @@ function normalizeEnrollment(
         e.status === "active" && enrollmentClass(e)?.is_active === false,
     );
   if (onlyArchivedActive) {
-    return { status: "inactive", klass: null };
+    return {
+      status: "inactive",
+      klass: null,
+      homeroomLabel: HOMEROOM_NOT_ASSIGNED_LABEL,
+      homeroomConflict: false,
+    };
   }
 
   // Otherwise surface a non-active enrollment status without implying current placement.
@@ -149,10 +184,20 @@ function normalizeEnrollment(
         classLabel(enrollmentClass(b)),
       ),
     );
-    return { status: ranked[0]!.status, klass: null };
+    return {
+      status: ranked[0]!.status,
+      klass: null,
+      homeroomLabel: HOMEROOM_NOT_ASSIGNED_LABEL,
+      homeroomConflict: false,
+    };
   }
 
-  return { status: "inactive", klass: null };
+  return {
+    status: "inactive",
+    klass: null,
+    homeroomLabel: HOMEROOM_NOT_ASSIGNED_LABEL,
+    homeroomConflict: false,
+  };
 }
 
 export const loadStudentProfileResult = cache(
@@ -172,6 +217,9 @@ export const loadStudentProfileResult = cache(
         preferred_name,
         external_id,
         student_enrollments (
+          id,
+          class_id,
+          school_year_id,
           status,
           classes ( name, section, is_active, grade_levels ( name ) )
         )
@@ -191,7 +239,7 @@ export const loadStudentProfileResult = cache(
     const en = normalizeEnrollment(row);
     const klass = en?.klass ?? null;
     const gname = gradeName(klass);
-    const homeroom = klass ? classLabel(klass) : "No active enrollment";
+    const homeroom = en?.homeroomLabel ?? HOMEROOM_NOT_ASSIGNED_LABEL;
     const statusRaw = en?.status ?? "inactive";
     const status = enrollmentStatusToProfile(statusRaw);
 
@@ -202,6 +250,7 @@ export const loadStudentProfileResult = cache(
       division: inferDivision(gname),
       gradeLevel: gname,
       homeroom,
+      homeroomConflict: en?.homeroomConflict === true,
       status,
       dateOfBirth: "—",
       tags: [],

@@ -13,6 +13,10 @@
  * Prefer this query-side filter for CURRENT operational lists, counts, and selectors.
  * Class-scoped historical views (archived class pages) may still list enrollments by class_id.
  *
+ * Current homeroom placement (which class label to show) uses
+ * `resolveCurrentHomeroom` in current-homeroom.ts — at most one active homeroom
+ * per student per school year (Option A: all classes are homerooms today).
+ *
  * PostgREST pattern when querying enrollments for operational active students:
  * ```
  * .from("student_enrollments")

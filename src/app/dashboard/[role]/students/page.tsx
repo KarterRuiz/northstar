@@ -173,7 +173,13 @@ async function StudentsDirectoryResults({
                         {formatDirectoryDash(student.gradeLevel)}
                       </TableCell>
                       <TableCell className="relative z-[2] hidden max-w-[14rem] truncate md:table-cell">
-                        {formatDirectoryDash(student.classLabel)}
+                        {student.homeroomConflict ? (
+                          <span className="text-destructive" title="Multiple active homerooms">
+                            {formatDirectoryDash(student.classLabel)}
+                          </span>
+                        ) : (
+                          formatDirectoryDash(student.classLabel)
+                        )}
                       </TableCell>
                       <TableCell className="relative z-[2]">
                         <Badge variant="success" className="capitalize">

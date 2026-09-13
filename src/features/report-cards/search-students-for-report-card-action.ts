@@ -2,6 +2,7 @@
 
 import { canUploadReportCards, isRole } from "@/config/roles";
 import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
+import { resolveCurrentHomeroom } from "@/features/students/current-homeroom";
 import { getReportCardStaff } from "@/lib/auth/report-card-upload-role";
 import { logServerError } from "@/lib/errors/safe-user-message";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -82,7 +83,7 @@ export async function searchStudentsForReportCardAction(
   // Current placement only: active enrollment in an active class.
   const enrollmentsRes = await supabase
     .from("student_enrollments")
-    .select("student_id, class_id, classes!inner ( id )")
+    .select("id, student_id, class_id, school_year_id, classes!inner ( id )")
     .in("student_id", ids)
     .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
     .eq("classes.is_active", true);
@@ -135,18 +136,50 @@ export async function searchStudentsForReportCardAction(
   const gradeById = new Map(
     (gradesRes.data ?? []).map((g) => [g.id, g.name?.trim() || null]),
   );
-  const classByStudent = new Map<string, { classLabel: string; gradeLabel: string | null }>();
+  const enrollmentsByStudent = new Map<
+    string,
+    {
+      id: string;
+      classId: string;
+      schoolYearId: string;
+      classLabel: string;
+      gradeLabel: string | null;
+    }[]
+  >();
   for (const en of enrollmentsRes.data ?? []) {
     const klass = classById.get(en.class_id);
     if (!klass) continue;
-    const next = {
+    const list = enrollmentsByStudent.get(en.student_id) ?? [];
+    list.push({
+      id: en.id,
+      classId: en.class_id,
+      schoolYearId: en.school_year_id,
       classLabel: formatClassLabel(klass.name, klass.section),
       gradeLabel: gradeById.get(klass.grade_level_id) ?? null,
-    };
-    const prev = classByStudent.get(en.student_id);
-    if (!prev || next.classLabel.localeCompare(prev.classLabel) < 0) {
-      classByStudent.set(en.student_id, next);
-    }
+    });
+    enrollmentsByStudent.set(en.student_id, list);
+  }
+
+  const classByStudent = new Map<string, { classLabel: string; gradeLabel: string | null }>();
+  for (const [studentId, list] of enrollmentsByStudent) {
+    const resolution = resolveCurrentHomeroom(
+      list.map((e) => ({
+        id: e.id,
+        classId: e.classId,
+        schoolYearId: e.schoolYearId,
+        status: OPERATIONAL_ACTIVE_ENROLLMENT_STATUS,
+        classIsActive: true,
+        classLabel: e.classLabel,
+        gradeLabel: e.gradeLabel ?? undefined,
+      })),
+    );
+    if (resolution.kind === "not_assigned") continue;
+    const chosen =
+      resolution.kind === "assigned" ? resolution.enrollment : resolution.preferred;
+    classByStudent.set(studentId, {
+      classLabel: chosen.classLabel,
+      gradeLabel: chosen.gradeLabel ?? null,
+    });
   }
 
   const students: ReportCardStudentOption[] = currentRows.map((row) => {

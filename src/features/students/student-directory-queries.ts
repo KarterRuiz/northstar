@@ -7,6 +7,11 @@ import {
   OPERATIONAL_ACTIVE_ENROLLMENT_STATUS,
   isOperationallyActiveEnrollment,
 } from "@/features/students/active-student-enrollments";
+import {
+  formatHomeroomDisplay,
+  resolveCurrentHomeroom,
+  type HomeroomEnrollmentInput,
+} from "@/features/students/current-homeroom";
 import type { StudentListEntry } from "@/features/students/profile/types";
 import { formatStudentNumberDisplay } from "@/features/students/student-number";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
@@ -31,7 +36,10 @@ type StudentEmbed = {
   external_id: string | null;
 };
 type EnrollmentRow = {
+  id: string;
   student_id: string;
+  class_id: string;
+  school_year_id: string;
   status: string;
   students: StudentEmbed | StudentEmbed[] | null;
   classes: ClassEmbed | ClassEmbed[] | null;
@@ -119,7 +127,10 @@ export const loadStudentDirectory = cache(
       .from("student_enrollments")
       .select(
         `
+        id,
         student_id,
+        class_id,
+        school_year_id,
         status,
         students!inner (
           id,
@@ -164,38 +175,63 @@ export const loadStudentDirectory = cache(
     }
 
     const rows = (data ?? []) as unknown as EnrollmentRow[];
-    /** One display row per student — pick the lexicographically smallest class label. */
-    const best = new Map<string, StudentListEntry>();
+    /** Group operational enrollments per student, then resolve current homeroom. */
+    const byStudent = new Map<
+      string,
+      { student: StudentEmbed; enrollments: HomeroomEnrollmentInput[] }
+    >();
 
     for (const raw of rows) {
       const norm = normalizeEnrollmentRow(raw);
       if (!norm) continue;
       const { student, classes } = norm;
-      // Query already filters operational active; badge mirrors that rule.
-      const status = isOperationallyActiveEnrollment({
+      if (
+        !isOperationallyActiveEnrollment({
+          status: norm.status,
+          classIsActive: classes?.is_active !== false,
+        })
+      ) {
+        continue;
+      }
+      const input: HomeroomEnrollmentInput = {
+        id: raw.id,
+        classId: raw.class_id,
+        schoolYearId: raw.school_year_id,
         status: norm.status,
         classIsActive: classes?.is_active !== false,
-      })
-        ? OPERATIONAL_ACTIVE_ENROLLMENT_STATUS
-        : "inactive";
-      const gl = gradeLevelName(classes);
-      const cl = classLabel(classes);
-      const entry: StudentListEntry = {
-        id: student.id,
-        fullName: displayName(student),
-        studentNumber: formatStudentNumberDisplay(student.external_id),
-        gradeLevel: gl,
-        classLabel: cl,
-        status,
+        classLabel: classLabel(classes),
+        gradeLabel: gradeLevelName(classes),
       };
-
-      const prev = best.get(student.id);
-      if (!prev || entry.classLabel.localeCompare(prev.classLabel) < 0) {
-        best.set(student.id, entry);
+      const bucket = byStudent.get(student.id);
+      if (bucket) {
+        bucket.enrollments.push(input);
+      } else {
+        byStudent.set(student.id, { student, enrollments: [input] });
       }
     }
 
-    const students = Array.from(best.values()).sort((a, b) =>
+    const students: StudentListEntry[] = [];
+    for (const { student, enrollments } of byStudent.values()) {
+      const resolution = resolveCurrentHomeroom(enrollments);
+      const classLabelStr = formatHomeroomDisplay(resolution, { forAdmin: true });
+      const chosen =
+        resolution.kind === "assigned"
+          ? resolution.enrollment
+          : resolution.kind === "conflict"
+            ? resolution.preferred
+            : null;
+      students.push({
+        id: student.id,
+        fullName: displayName(student),
+        studentNumber: formatStudentNumberDisplay(student.external_id),
+        gradeLevel: chosen?.gradeLabel ?? "—",
+        classLabel: classLabelStr,
+        status: OPERATIONAL_ACTIVE_ENROLLMENT_STATUS,
+        homeroomConflict: resolution.conflict,
+      });
+    }
+
+    students.sort((a, b) =>
       a.fullName.localeCompare(b.fullName, undefined, { sensitivity: "base" }),
     );
 

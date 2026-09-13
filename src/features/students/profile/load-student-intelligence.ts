@@ -18,6 +18,7 @@ import {
   type StudentReportReadiness,
 } from "@/features/teacher/gradebook/report-readiness";
 import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active-student-enrollments";
+import { resolveCurrentHomeroom } from "@/features/students/current-homeroom";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -50,15 +51,6 @@ export type StudentIntelligenceResult =
   | { kind: "no_enrollment" }
   | { kind: "unconfigured" }
   | { kind: "error"; message: string };
-
-type ClassEmbed = {
-  id: string;
-  name: string;
-  section: string | null;
-  school_year_id: string;
-  school_years: { id: string; label: string } | { id: string; label: string }[] | null;
-  grade_levels: { name: string } | { name: string }[] | null;
-};
 
 function unwrapOne<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null;
@@ -104,12 +96,15 @@ export const loadStudentIntelligence = cache(
     const termFilter = options?.termFilter ?? "";
     const supabase = await createServerSupabaseClient();
 
-    const { data: enrollment, error: enrollError } = await supabase
+    const { data: enrollmentRows, error: enrollError } = await supabase
       .from("student_enrollments")
       .select(
         `
+        id,
         class_id,
+        school_year_id,
         status,
+        created_at,
         classes!inner (
           id,
           name,
@@ -123,22 +118,61 @@ export const loadStudentIntelligence = cache(
       )
       .eq("student_id", studentId)
       .eq("status", OPERATIONAL_ACTIVE_ENROLLMENT_STATUS)
-      .eq("classes.is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq("classes.is_active", true);
 
     if (enrollError) {
       return { kind: "error", message: enrollError.message };
     }
+
+    type IntelligenceClassEmbed = {
+      id: string;
+      name: string;
+      section: string | null;
+      school_year_id: string;
+      is_active: boolean | null;
+      school_years: { id: string; label: string } | { id: string; label: string }[] | null;
+      grade_levels: { name: string } | { name: string }[] | null;
+    };
+
+    const rows = (enrollmentRows ?? []) as unknown as {
+      id: string;
+      class_id: string;
+      school_year_id: string;
+      status: string;
+      created_at: string | null;
+      classes: IntelligenceClassEmbed | IntelligenceClassEmbed[] | null;
+    }[];
+
+    const resolution = resolveCurrentHomeroom(
+      rows.map((row) => {
+        const klass = unwrapOne(row.classes);
+        const sec = klass?.section?.trim();
+        const base = klass?.name?.trim() || "Class";
+        return {
+          id: row.id,
+          classId: row.class_id,
+          schoolYearId: row.school_year_id,
+          status: row.status,
+          classIsActive: klass?.is_active === true,
+          classLabel: sec ? `${base} · ${sec}` : base,
+          createdAt: row.created_at,
+        };
+      }),
+    );
+
+    if (resolution.kind === "not_assigned") {
+      return { kind: "no_enrollment" };
+    }
+
+    const chosen =
+      resolution.kind === "assigned" ? resolution.enrollment : resolution.preferred;
+    const enrollment = rows.find((r) => r.id === chosen.id) ?? rows[0];
     if (!enrollment?.class_id) {
       return { kind: "no_enrollment" };
     }
 
     const classId = enrollment.class_id as string;
-    const klass = unwrapOne(
-      (enrollment as { classes: ClassEmbed | ClassEmbed[] | null }).classes,
-    );
+    const klass = unwrapOne(enrollment.classes);
     if (!klass) {
       return { kind: "error", message: "Enrollment class could not be loaded." };
     }

@@ -5,6 +5,8 @@ import type { AuditAction } from "@/lib/audit/types";
 import { logServerError, safeUserFacingMessage } from "@/lib/errors/safe-user-message";
 import type { createServerSupabaseClient } from "@/lib/supabase/server";
 
+import { assertNoActiveHomeroomConflict } from "./assert-no-active-homeroom-conflict";
+import { activeHomeroomConflictMessage } from "./current-homeroom";
 import type { EnrollmentStatusForm } from "./enrollment-constants";
 import {
   isStudentNumberUniqueViolation,
@@ -80,6 +82,16 @@ export async function createStudentRecord(
 
   const studentId = inserted.id;
 
+  const homeroomGuard = await assertNoActiveHomeroomConflict(supabase, {
+    studentId,
+    schoolYearId: input.schoolYearId,
+    nextStatus: input.enrollmentStatus,
+  });
+  if (!homeroomGuard.ok) {
+    await supabase.from("students").delete().eq("id", studentId);
+    return { ok: false, message: homeroomGuard.message };
+  }
+
   const { error: enrollError } = await supabase.from("student_enrollments").insert({
     student_id: studentId,
     class_id: input.classId,
@@ -91,6 +103,11 @@ export async function createStudentRecord(
   if (enrollError) {
     logServerError("students.createStudentRecord.enroll", enrollError.message);
     await supabase.from("students").delete().eq("id", studentId);
+    if (
+      enrollError.message.includes("student_enrollments_one_active_homeroom_per_year_uidx")
+    ) {
+      return { ok: false, message: activeHomeroomConflictMessage(enrollError.message) };
+    }
     const rosterConflict =
       enrollError.message.includes("student_enrollments_active_class_roster_uidx") ||
       enrollError.code === "23505";

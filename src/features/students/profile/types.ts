@@ -17,6 +17,8 @@ export type StudentProfile = {
   division: StudentDivision;
   gradeLevel: string;
   homeroom: string;
+  /** True when multiple operationally active homerooms exist (admin integrity). */
+  homeroomConflict?: boolean;
   status: StudentEnrollmentStatus;
   /** ISO date string */
   dateOfBirth: string;
@@ -101,4 +103,6 @@ export type StudentListEntry = {
   classLabel: string;
   /** Enrollment row status, e.g. `active` / `withdrawn` */
   status: string;
+  /** Multiple operationally active homerooms for this student (admin warning). */
+  homeroomConflict?: boolean;
 };

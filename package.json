@@ -10,6 +10,7 @@
     "test:roster-import": "npx tsx --test src/features/students/roster-import/roster-import.intelligence.test.ts",
     "test:bulk-add": "npx tsx --test src/features/students/bulk-add/bulk-add.test.ts",
     "test:student-number": "npx tsx --test src/features/students/student-number.test.ts",
+    "test:homeroom": "npx tsx --test src/features/students/current-homeroom.test.ts src/features/students/active-student-enrollments.test.ts src/features/students/transfer-student-enrollment.test.ts",
     "test:report-cards": "npx tsx --test src/features/report-cards/reporting-progress.test.ts",
     "test:follow-up": "npx tsx --test src/features/follow-up/follow-up.test.ts",
     "test:calendar": "npx tsx --test src/features/calendar/calendar.test.ts",
