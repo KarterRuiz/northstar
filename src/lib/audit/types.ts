@@ -92,6 +92,11 @@ export const auditActions = [
   "calendar_note_created",
   "calendar_note_updated",
   "calendar_note_deleted",
+  "year_end_plan_created",
+  "year_end_plan_updated",
+  "year_end_mapping_changed",
+  "year_end_disposition_changed",
+  "year_end_marked_ready",
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];
@@ -739,5 +744,46 @@ export type AuditEventInput =
       metadata: {
         noteId: string;
         noteDate?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "year_end_plan_created";
+      metadata: {
+        planId: string;
+        fromSchoolYearId: string;
+        toSchoolYearId: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "year_end_plan_updated";
+      metadata: {
+        planId: string;
+        change: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "year_end_mapping_changed";
+      metadata: {
+        planId: string;
+        fromClassId?: string;
+        toClassId?: string | null;
+        change?: string;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "year_end_disposition_changed";
+      metadata: {
+        planId: string;
+        itemId: string;
+        disposition: string;
+        destinationClassId?: string | null;
+      } & Record<string, AuditMetadataPrimitive>;
+    })
+  | (BaseAuditFields & {
+      action: "year_end_marked_ready";
+      metadata: {
+        planId: string;
+        totalStudents: number;
+        blockerCount: number;
       } & Record<string, AuditMetadataPrimitive>;
     });

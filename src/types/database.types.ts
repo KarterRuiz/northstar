@@ -1247,6 +1247,126 @@ export type Database = {
         };
         Relationships: [];
       };
+      year_end_plans: {
+        Row: {
+          id: string;
+          from_school_year_id: string;
+          to_school_year_id: string;
+          status: "draft" | "ready" | "finalized";
+          created_by: string;
+          preview_snapshot: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          from_school_year_id: string;
+          to_school_year_id: string;
+          status?: "draft" | "ready" | "finalized";
+          created_by: string;
+          preview_snapshot?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          from_school_year_id?: string;
+          to_school_year_id?: string;
+          status?: "draft" | "ready" | "finalized";
+          created_by?: string;
+          preview_snapshot?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      year_end_class_maps: {
+        Row: {
+          id: string;
+          plan_id: string;
+          from_class_id: string;
+          to_class_id: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          plan_id: string;
+          from_class_id: string;
+          to_class_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          plan_id?: string;
+          from_class_id?: string;
+          to_class_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      year_end_plan_items: {
+        Row: {
+          id: string;
+          plan_id: string;
+          student_id: string;
+          source_enrollment_id: string;
+          disposition:
+            | "promote"
+            | "retain"
+            | "remap"
+            | "graduate_primary"
+            | "leave_school"
+            | "custom";
+          destination_class_id: string | null;
+          destination_grade_level_id: string | null;
+          reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          plan_id: string;
+          student_id: string;
+          source_enrollment_id: string;
+          disposition:
+            | "promote"
+            | "retain"
+            | "remap"
+            | "graduate_primary"
+            | "leave_school"
+            | "custom";
+          destination_class_id?: string | null;
+          destination_grade_level_id?: string | null;
+          reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          plan_id?: string;
+          student_id?: string;
+          source_enrollment_id?: string;
+          disposition?:
+            | "promote"
+            | "retain"
+            | "remap"
+            | "graduate_primary"
+            | "leave_school"
+            | "custom";
+          destination_class_id?: string | null;
+          destination_grade_level_id?: string | null;
+          reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       school_events: {
         Row: {
           id: string;
