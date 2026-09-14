@@ -17,9 +17,12 @@ import { OPERATIONAL_ACTIVE_ENROLLMENT_STATUS } from "@/features/students/active
 
 import {
   dispositionRequiresReason,
-  findNextGradeLevel,
-  isTerminalPrimaryGrade,
 } from "./grade-ladder";
+import {
+  classStructureKey,
+  proposeNextGradeShells,
+  suggestLineageClassMaps,
+} from "./class-lineage";
 import { buildDefaultPlanItems, mergePlanItemsOnRefresh } from "./plan-items";
 import {
   canMarkPlanReady,
@@ -318,6 +321,12 @@ export async function ensureYearEndNextYearTermsAction(
 /**
  * Copy STRUCTURE ONLY from selected from-year classes into the next year.
  * Never copies students, enrollments, attendance, report cards, or gradebook.
+ *
+ * bumpGrade=0: same-grade shells (retain name/section).
+ * bumpGrade=1: cohort-driven next-grade shells — one shell per source class
+ * below Grade 5, named from the source (ECG1-1→ECG2-1), independent of how
+ * many destination-grade classes already exist. Does not auto-save mappings;
+ * use applyYearEndSuggestedClassMapsAction after review.
  */
 export async function copyYearEndClassStructureAction(
   _prev: YearEndMutationState | undefined,
@@ -351,93 +360,137 @@ export async function copyYearEndClassStructureAction(
   const toClasses = await loadYearClasses(ctx.supabase, plan.to_school_year_id);
 
   const existingKeys = new Set(
-    toClasses.map(
-      (c) =>
-        `${c.grade_level_id}::${c.name.trim().toLowerCase()}::${(c.section ?? "").trim().toLowerCase()}`,
-    ),
+    toClasses.map((c) => classStructureKey(c.grade_level_id, c.name, c.section)),
   );
 
   let created = 0;
   let skipped = 0;
+  /** Same-grade copy may still link maps by exact match; next-grade does not auto-map. */
   const newMaps: { from_class_id: string; to_class_id: string }[] = [];
 
-  for (const source of fromClasses) {
-    const sourceGrade = gradesById.get(source.grade_level_id);
-    let targetGradeId = source.grade_level_id;
+  if (bumpGrade) {
+    const proposals = proposeNextGradeShells({
+      sourceClasses: fromClasses,
+      gradesById,
+      allGrades: grades,
+    });
 
-    if (bumpGrade && sourceGrade) {
-      if (isTerminalPrimaryGrade(sourceGrade)) {
+    for (const proposal of proposals) {
+      if (proposal.skippedReason) {
         skipped += 1;
         continue;
       }
-      const next = findNextGradeLevel(sourceGrade, grades);
-      if (!next) {
-        skipped += 1;
-        continue;
-      }
-      targetGradeId = next.id;
-    }
 
-    const key = `${targetGradeId}::${source.name.trim().toLowerCase()}::${(source.section ?? "").trim().toLowerCase()}`;
-    if (existingKeys.has(key)) {
-      skipped += 1;
-      const match = toClasses.find(
-        (c) =>
-          c.grade_level_id === targetGradeId &&
-          c.name.trim().toLowerCase() === source.name.trim().toLowerCase() &&
-          (c.section ?? "").trim().toLowerCase() ===
-            (source.section ?? "").trim().toLowerCase(),
+      const key = classStructureKey(
+        proposal.targetGradeLevelId,
+        proposal.name,
+        proposal.section,
       );
-      if (match) {
-        newMaps.push({ from_class_id: source.id, to_class_id: match.id });
+      if (existingKeys.has(key)) {
+        skipped += 1;
+        continue;
       }
-      continue;
-    }
 
-    const { data: inserted, error: insErr } = await ctx.supabase
-      .from("classes")
-      .insert({
+      const { data: inserted, error: insErr } = await ctx.supabase
+        .from("classes")
+        .insert({
+          school_year_id: plan.to_school_year_id,
+          grade_level_id: proposal.targetGradeLevelId,
+          name: proposal.name,
+          section: proposal.section,
+          is_active: true,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (insErr || !inserted?.id) {
+        logServerError("year-end.copyStructure.insert", insErr?.message ?? "no id");
+        skipped += 1;
+        continue;
+      }
+
+      created += 1;
+      existingKeys.add(key);
+      toClasses.push({
+        id: inserted.id,
+        school_year_id: plan.to_school_year_id,
+        grade_level_id: proposal.targetGradeLevelId,
+        name: proposal.name,
+        section: proposal.section,
+        is_active: true,
+      });
+
+      await recordAuditEvent({
+        action: "class_created",
+        actorUserId: ctx.userId,
+        metadata: {
+          classId: inserted.id,
+          schoolYearId: plan.to_school_year_id,
+          gradeLevelId: proposal.targetGradeLevelId,
+          source: "year_end_structure_copy",
+          sourceClassId: proposal.sourceClassId,
+        },
+      });
+    }
+  } else {
+    for (const source of fromClasses) {
+      const targetGradeId = source.grade_level_id;
+      const key = classStructureKey(targetGradeId, source.name, source.section);
+      if (existingKeys.has(key)) {
+        skipped += 1;
+        const match = toClasses.find(
+          (c) => classStructureKey(c.grade_level_id, c.name, c.section) === key,
+        );
+        if (match) {
+          newMaps.push({ from_class_id: source.id, to_class_id: match.id });
+        }
+        continue;
+      }
+
+      const { data: inserted, error: insErr } = await ctx.supabase
+        .from("classes")
+        .insert({
+          school_year_id: plan.to_school_year_id,
+          grade_level_id: targetGradeId,
+          name: source.name,
+          section: source.section,
+          is_active: true,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (insErr || !inserted?.id) {
+        logServerError("year-end.copyStructure.insert", insErr?.message ?? "no id");
+        skipped += 1;
+        continue;
+      }
+
+      created += 1;
+      existingKeys.add(key);
+      toClasses.push({
+        id: inserted.id,
         school_year_id: plan.to_school_year_id,
         grade_level_id: targetGradeId,
         name: source.name,
         section: source.section,
         is_active: true,
-      })
-      .select("id")
-      .maybeSingle();
+      });
+      newMaps.push({ from_class_id: source.id, to_class_id: inserted.id });
 
-    if (insErr || !inserted?.id) {
-      logServerError("year-end.copyStructure.insert", insErr?.message ?? "no id");
-      skipped += 1;
-      continue;
+      await recordAuditEvent({
+        action: "class_created",
+        actorUserId: ctx.userId,
+        metadata: {
+          classId: inserted.id,
+          schoolYearId: plan.to_school_year_id,
+          gradeLevelId: targetGradeId,
+          source: "year_end_structure_copy",
+          sourceClassId: source.id,
+        },
+      });
     }
-
-    created += 1;
-    existingKeys.add(key);
-    toClasses.push({
-      id: inserted.id,
-      school_year_id: plan.to_school_year_id,
-      grade_level_id: targetGradeId,
-      name: source.name,
-      section: source.section,
-      is_active: true,
-    });
-    newMaps.push({ from_class_id: source.id, to_class_id: inserted.id });
-
-    await recordAuditEvent({
-      action: "class_created",
-      actorUserId: ctx.userId,
-      metadata: {
-        classId: inserted.id,
-        schoolYearId: plan.to_school_year_id,
-        gradeLevelId: targetGradeId,
-        source: "year_end_structure_copy",
-        sourceClassId: source.id,
-      },
-    });
   }
 
-  // Upsert class maps for created/matched destinations.
   for (const map of newMaps) {
     const { data: existingMap } = await ctx.supabase
       .from("year_end_class_maps")
@@ -473,9 +526,214 @@ export async function copyYearEndClassStructureAction(
   });
 
   revalidateYearEnd(ctx.role, planId);
+  if (bumpGrade) {
+    return {
+      ok: true,
+      message: `Created ${created} next-grade shell${created === 1 ? "" : "s"} (skipped ${skipped}). Review lineage suggestions before saving maps. No students or enrollments were copied.`,
+    };
+  }
   return {
     ok: true,
     message: `Copied structure for ${created} class${created === 1 ? "" : "es"} (skipped ${skipped}). No students or enrollments were copied.`,
+  };
+}
+
+/**
+ * Apply deterministic 1:1 lineage map suggestions for unmapped source classes.
+ * Does not overwrite existing non-null destinations. Never creates enrollments.
+ */
+export async function applyYearEndSuggestedClassMapsAction(
+  _prev: YearEndMutationState | undefined,
+  formData: FormData,
+): Promise<YearEndMutationState> {
+  const ctx = await requireStructureManager();
+  if (!ctx.ok) return ctx;
+
+  const planId = trimStr(formData.get("planId"), 64);
+  if (!isUuid(planId)) return { ok: false, error: "Invalid plan." };
+
+  const { data: plan, error: planErr } = await ctx.supabase
+    .from("year_end_plans")
+    .select("id, from_school_year_id, to_school_year_id, status")
+    .eq("id", planId)
+    .maybeSingle();
+
+  if (planErr) return failDb("applyMaps.loadPlan", planErr.message, "Could not load plan.");
+  if (!plan) return { ok: false, error: "Plan not found." };
+  if (plan.status === "finalized") {
+    return { ok: false, error: "Finalized plans cannot be edited." };
+  }
+  if (plan.status === "ready") {
+    await ctx.supabase.from("year_end_plans").update({ status: "draft" }).eq("id", planId);
+  }
+
+  const grades = await loadGradeLevels(ctx.supabase);
+  const gradesById = new Map(grades.map((g) => [g.id, g]));
+  const fromClasses = (await loadYearClasses(ctx.supabase, plan.from_school_year_id)).filter(
+    (c) => c.is_active,
+  );
+  const toClasses = (await loadYearClasses(ctx.supabase, plan.to_school_year_id)).filter(
+    (c) => c.is_active,
+  );
+
+  const suggestions = suggestLineageClassMaps({
+    sourceClasses: fromClasses,
+    destinationClasses: toClasses,
+    gradesById,
+    allGrades: grades,
+  });
+
+  const { data: existingMaps } = await ctx.supabase
+    .from("year_end_class_maps")
+    .select("id, from_class_id, to_class_id")
+    .eq("plan_id", planId);
+
+  const existingByFrom = new Map(
+    (existingMaps ?? []).map((m) => [m.from_class_id, m] as const),
+  );
+
+  let applied = 0;
+  let skipped = 0;
+
+  for (const suggestion of suggestions) {
+    const prev = existingByFrom.get(suggestion.fromClassId);
+    if (prev?.to_class_id) {
+      skipped += 1;
+      continue;
+    }
+
+    if (prev?.id) {
+      const { error } = await ctx.supabase
+        .from("year_end_class_maps")
+        .update({ to_class_id: suggestion.toClassId })
+        .eq("id", prev.id);
+      if (error) {
+        return failDb("applyMaps.update", error.message, "Could not apply suggested maps.");
+      }
+    } else {
+      const { error } = await ctx.supabase.from("year_end_class_maps").insert({
+        plan_id: planId,
+        from_class_id: suggestion.fromClassId,
+        to_class_id: suggestion.toClassId,
+      });
+      if (error) {
+        return failDb("applyMaps.insert", error.message, "Could not apply suggested maps.");
+      }
+    }
+    applied += 1;
+  }
+
+  await recordAuditEvent({
+    action: "year_end_mapping_changed",
+    actorUserId: ctx.userId,
+    metadata: {
+      planId,
+      change: "apply_lineage_suggestions",
+      applied,
+      skipped,
+    },
+  });
+
+  revalidateYearEnd(ctx.role, planId);
+  return {
+    ok: true,
+    message: `Applied ${applied} lineage map suggestion${applied === 1 ? "" : "s"} (skipped ${skipped} already mapped).`,
+  };
+}
+
+/**
+ * Create one next-year destination shell from Year-End planning.
+ * Structure only — no enrollments. Name/section must be provided by admin.
+ */
+export async function createYearEndDestinationClassAction(
+  _prev: YearEndMutationState | undefined,
+  formData: FormData,
+): Promise<YearEndMutationState> {
+  const ctx = await requireStructureManager();
+  if (!ctx.ok) return ctx;
+
+  const planId = trimStr(formData.get("planId"), 64);
+  const gradeLevelId = trimStr(formData.get("gradeLevelId"), 64);
+  const name = trimStr(formData.get("name"), 120);
+  const sectionRaw = trimStr(formData.get("section"), 80);
+  const section = sectionRaw.length > 0 ? sectionRaw : null;
+
+  if (!isUuid(planId) || !isUuid(gradeLevelId)) {
+    return { ok: false, error: "Invalid plan or grade level." };
+  }
+  if (!name) {
+    return { ok: false, error: "Class name is required." };
+  }
+
+  const { data: plan, error: planErr } = await ctx.supabase
+    .from("year_end_plans")
+    .select("id, to_school_year_id, status")
+    .eq("id", planId)
+    .maybeSingle();
+
+  if (planErr) return failDb("createDest.loadPlan", planErr.message, "Could not load plan.");
+  if (!plan) return { ok: false, error: "Plan not found." };
+  if (plan.status === "finalized") {
+    return { ok: false, error: "Finalized plans cannot be edited." };
+  }
+  if (plan.status !== "draft") {
+    return { ok: false, error: "Revert the plan to draft before adding destination classes." };
+  }
+
+  const grades = await loadGradeLevels(ctx.supabase);
+  const grade = grades.find((g) => g.id === gradeLevelId);
+  if (!grade || grade.is_archived) {
+    return { ok: false, error: "Choose an active grade level." };
+  }
+
+  const toClasses = await loadYearClasses(ctx.supabase, plan.to_school_year_id);
+  const key = classStructureKey(gradeLevelId, name, section);
+  if (
+    toClasses.some(
+      (c) => classStructureKey(c.grade_level_id, c.name, c.section) === key,
+    )
+  ) {
+    return {
+      ok: false,
+      error: "A class with this name and section already exists in the next year.",
+    };
+  }
+
+  const { data: inserted, error: insErr } = await ctx.supabase
+    .from("classes")
+    .insert({
+      school_year_id: plan.to_school_year_id,
+      grade_level_id: gradeLevelId,
+      name,
+      section,
+      is_active: true,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (insErr || !inserted?.id) {
+    return failDb(
+      "createDest.insert",
+      insErr?.message ?? "no id",
+      "Could not create destination class.",
+    );
+  }
+
+  await recordAuditEvent({
+    action: "class_created",
+    actorUserId: ctx.userId,
+    metadata: {
+      classId: inserted.id,
+      schoolYearId: plan.to_school_year_id,
+      gradeLevelId,
+      source: "year_end_add_destination",
+    },
+  });
+
+  revalidateYearEnd(ctx.role, planId);
+  return {
+    ok: true,
+    message: `Created destination class “${name}” in ${grade.name}. No students were enrolled.`,
   };
 }
 

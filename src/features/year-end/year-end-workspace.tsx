@@ -28,8 +28,10 @@ import {
 } from "./types";
 import type { YearEndWorkspaceData } from "./load-year-end-workspace";
 import {
+  applyYearEndSuggestedClassMapsAction,
   copyYearEndClassStructureAction,
   createOrOpenYearEndPlanAction,
+  createYearEndDestinationClassAction,
   ensureYearEndNextYearTermsAction,
   markYearEndPlanReadyAction,
   refreshYearEndPlanItemsAction,
@@ -363,6 +365,19 @@ function ClassMapPanel({
     updateYearEndClassMapAction,
     undefined,
   );
+  const [suggestState, suggestAction, suggestPending] = useActionState(
+    applyYearEndSuggestedClassMapsAction,
+    undefined,
+  );
+  const [addState, addAction, addPending] = useActionState(
+    createYearEndDestinationClassAction,
+    undefined,
+  );
+
+  const suggestionByFrom = new Map(
+    data.mapSuggestions.map((s) => [s.fromClassId, s.toClassId] as const),
+  );
+  const mergeDestIds = new Set(data.mergeGroups.map((g) => g.toClassId));
 
   return (
     <div className="space-y-6">
@@ -370,9 +385,10 @@ function ClassMapPanel({
         <CardHeader>
           <CardTitle>Scaffold next-year classes</CardTitle>
           <CardDescription>
-            Copy structure only (name, section, grade). Does not copy students, enrollments,
-            attendance, report cards, or gradebook data. Grade 5 sources are skipped when bumping
-            grade.
+            Copy structure only (name, section, grade). Next-grade copy creates one shell per
+            source class below Grade 5 (ECG1-1→ECG2-1), preserving Experimental / International
+            naming. Does not copy students, enrollments, attendance, report cards, or gradebook.
+            Scaffolding does not auto-save maps — apply lineage suggestions after review.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
@@ -390,9 +406,26 @@ function ClassMapPanel({
               Copy as next-grade shells
             </Button>
           </form>
+          <form action={suggestAction}>
+            <input type="hidden" name="planId" value={plan.id} />
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={suggestPending || data.pendingSuggestionCount === 0}
+            >
+              {suggestPending
+                ? "Applying…"
+                : `Apply lineage suggestions${
+                    data.pendingSuggestionCount > 0
+                      ? ` (${data.pendingSuggestionCount})`
+                      : ""
+                  }`}
+            </Button>
+          </form>
           <ActionMessage state={copyState} />
+          <ActionMessage state={suggestState} />
           <p className="text-muted-foreground w-full text-sm">
-            Or create classes manually in{" "}
+            Or create classes manually below / in{" "}
             <Link
               href={`/dashboard/${role}/classes`}
               className="text-primary underline-offset-4 hover:underline"
@@ -404,12 +437,125 @@ function ClassMapPanel({
         </CardContent>
       </Card>
 
+      {data.capacityRows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Capacity / structure</CardTitle>
+            <CardDescription>
+              Source cohort vs destination shells by next grade and program. Student counts are not
+              required here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul className="space-y-2 text-sm">
+              {data.capacityRows.map((row) => (
+                <li
+                  key={row.key}
+                  className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/40 py-1.5"
+                >
+                  <span>
+                    Incoming {row.destinationGradeName} {row.programLabel}
+                  </span>
+                  <span className="tabular-nums">
+                    Source {row.sourceCount} / Destination shells {row.destinationShellCount}
+                    {row.deficit > 0 ? (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        {" "}
+                        · Needs {row.deficit} more
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground"> · OK</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data.addShellOptions.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Add destination class</CardTitle>
+            <CardDescription>
+              Create an extra next-year shell when capacity is short. Suggested names are editable;
+              ambiguous patterns leave the name blank for you to fill in.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {data.addShellOptions.map((opt) => (
+              <form
+                key={`${opt.gradeLevelId}-${opt.program}`}
+                action={addAction}
+                className="grid gap-2 sm:grid-cols-[1fr_8rem_auto] sm:items-end"
+              >
+                <input type="hidden" name="planId" value={plan.id} />
+                <input type="hidden" name="gradeLevelId" value={opt.gradeLevelId} />
+                <label className="block space-y-1 text-sm">
+                  <span className="font-medium">{opt.buttonLabel}</span>
+                  <input
+                    name="name"
+                    required
+                    defaultValue={opt.suggestedName ?? ""}
+                    placeholder={
+                      opt.namingAmbiguous
+                        ? "Enter class name (naming ambiguous)"
+                        : "Class name"
+                    }
+                    className="border-input bg-background w-full rounded-md border px-3 py-2"
+                  />
+                </label>
+                <label className="block space-y-1 text-sm">
+                  <span className="font-medium">Section</span>
+                  <input
+                    name="section"
+                    defaultValue={opt.suggestedSection ?? ""}
+                    className="border-input bg-background w-full rounded-md border px-3 py-2"
+                  />
+                </label>
+                <Button type="submit" variant="secondary" disabled={addPending}>
+                  Create
+                </Button>
+              </form>
+            ))}
+            <ActionMessage state={addState} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data.mergeGroups.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Intentional merges</CardTitle>
+            <CardDescription>
+              Multiple source classes mapped to the same destination. Allowed — student assignment
+              happens later in Student Review.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-sm">
+              {data.mergeGroups.map((g) => (
+                <li key={g.toClassId}>
+                  {g.fromClassIds.length} source classes mapped to {g.toClassLabel}
+                  <span className="text-muted-foreground">
+                    {" "}
+                    ({g.fromClassLabels.join(", ")})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Class map</CardTitle>
           <CardDescription>
             Map each closing-year class to a next-year class. Unmapped is allowed (students will need
-            overrides). Grade 5 → Graduate Primary uses no destination class.
+            overrides). Multiple sources may share one destination (intentional merge). Grade 5 →
+            Graduate Primary uses no destination class.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -432,6 +578,10 @@ function ClassMapPanel({
                     const isG5 =
                       (row.fromClass.gradeCode ?? "").toUpperCase() === "G5" ||
                       /^grade\s*5$/i.test(row.fromClass.gradeName);
+                    const suggestedTo =
+                      row.toClassId ?? suggestionByFrom.get(row.fromClassId) ?? "__none__";
+                    const isMerge =
+                      row.toClassId != null && mergeDestIds.has(row.toClassId);
                     return (
                       <tr key={row.fromClassId} className="border-b border-border/50">
                         <td className="py-2 pr-3 align-middle">
@@ -439,6 +589,16 @@ function ClassMapPanel({
                           {isG5 ? (
                             <span className="text-muted-foreground ml-2 text-xs">
                               (Graduate Primary default)
+                            </span>
+                          ) : null}
+                          {isMerge ? (
+                            <span className="text-muted-foreground ml-2 text-xs">
+                              (merge)
+                            </span>
+                          ) : null}
+                          {!row.toClassId && suggestionByFrom.has(row.fromClassId) ? (
+                            <span className="text-muted-foreground ml-2 text-xs">
+                              (suggested)
                             </span>
                           ) : null}
                         </td>
@@ -452,7 +612,13 @@ function ClassMapPanel({
                             <input type="hidden" name="fromClassId" value={row.fromClassId} />
                             <select
                               name="toClassId"
-                              defaultValue={row.toClassId ?? "__none__"}
+                              defaultValue={
+                                row.toClassId
+                                  ? row.toClassId
+                                  : suggestedTo === "__none__"
+                                    ? "__none__"
+                                    : suggestedTo
+                              }
                               className="border-input bg-background w-full max-w-xs rounded-md border px-2 py-1.5"
                             >
                               <option value="__none__">— Unmapped —</option>
@@ -684,6 +850,19 @@ function PreviewPanel({
             <Stat label="Custom" value={data.counts.custom} />
             <Stat label="Blockers" value={data.counts.blockers} />
           </dl>
+
+          {data.mergeGroups.length > 0 ? (
+            <div className="rounded-md border border-border/60 bg-muted/30 p-3">
+              <p className="mb-2 text-sm font-medium">Intentional class merges</p>
+              <ul className="space-y-1 text-sm">
+                {data.mergeGroups.map((g) => (
+                  <li key={g.toClassId}>
+                    {g.fromClassIds.length} source classes mapped to {g.toClassLabel}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           {data.blockers.length > 0 ? (
             <div className="border-destructive/30 bg-destructive/5 rounded-md border p-3">

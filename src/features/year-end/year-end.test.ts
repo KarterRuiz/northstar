@@ -3,6 +3,14 @@ import { describe, it } from "node:test";
 
 import { canManageSchoolStructure } from "@/config/roles";
 import {
+  classStructureKey,
+  collectIntentionalMerges,
+  proposeNextGradeShells,
+  suggestLineageClassMaps,
+  suggestNextShellInBucket,
+  summarizeCohortCapacity,
+} from "@/features/year-end/class-lineage";
+import {
   defaultDispositionForGrade,
   dispositionForbidsDestination,
   dispositionRequiresDestination,
@@ -242,15 +250,34 @@ describe("year-end Phase 1 pure logic", () => {
   });
 
   it("L: Class-copy/scaffold suggestion uses structure fields only (no student ids)", () => {
+    const matching: ClassRef = {
+      ...toG2A,
+      id: "c-to-g2b",
+      name: "2B",
+      section: "B",
+    };
     const suggested = suggestDestinationClass({
-      sourceClass: { name: "3B", section: "B" },
+      sourceClass: { name: "1B", section: "B" },
+      targetGradeLevelId: "g2",
+      toYearClasses: [toG2A, matching],
+      toSchoolYearId: "y-to",
+      sourceGrade: grades[0],
+      targetGrade: grades[1],
+    });
+    assert.equal(suggested?.id, matching.id);
+    assert.ok(!("studentId" in (suggested ?? {})));
+  });
+
+  it("L2: Does not collapse multiple sources onto sole dest candidate", () => {
+    const suggested = suggestDestinationClass({
+      sourceClass: { name: "ECG1-5", section: "5" },
       targetGradeLevelId: "g2",
       toYearClasses: [toG2A],
       toSchoolYearId: "y-to",
+      sourceGrade: grades[0],
+      targetGrade: grades[1],
     });
-    // Section mismatch → null when multiple would be ambiguous; single candidate still ok
-    assert.equal(suggested?.id, toG2A.id);
-    assert.ok(!("studentId" in (suggested ?? {})));
+    assert.equal(suggested, null);
   });
 
   it("M: Teacher cannot manage school structure / year-end", () => {
@@ -334,5 +361,228 @@ describe("year-end Phase 1 pure logic", () => {
       classMaps: new Map([[fromG1A.id, toG1A.id]]),
     });
     assert.equal(items[0]!.destinationClassId, toG1A.id);
+  });
+});
+
+describe("year-end cohort scaffold + capacity (Phase class scaffolding)", () => {
+  const gradesWithPrograms: GradeLevelRef[] = [
+    ...grades,
+    {
+      id: "eg1",
+      name: "Experimental Grade 1",
+      code: "EG1",
+      sort_order: 1,
+      is_archived: false,
+    },
+    {
+      id: "eg2",
+      name: "Experimental Grade 2",
+      code: "EG2",
+      sort_order: 2,
+      is_archived: false,
+    },
+    {
+      id: "ig3",
+      name: "International Grade 3",
+      code: "IG3",
+      sort_order: 3,
+      is_archived: false,
+    },
+    {
+      id: "ig4",
+      name: "International Grade 4",
+      code: "IG4",
+      sort_order: 4,
+      is_archived: false,
+    },
+  ];
+  const gradesById = new Map(gradesWithPrograms.map((g) => [g.id, g]));
+
+  function ecg(id: string, gradeId: string, name: string, section: string): ClassRef {
+    return {
+      id,
+      school_year_id: "y-from",
+      grade_level_id: gradeId,
+      name,
+      section,
+      is_active: true,
+    };
+  }
+
+  it("A: ECG1-1..5 propose ECG2-1..5 regardless of existing G2 count", () => {
+    const sources = [1, 2, 3, 4, 5].map((n) =>
+      ecg(`s${n}`, "eg1", `ECG1-${n}`, String(n)),
+    );
+    const existingG2 = [ecg("d1", "eg2", "ECG2-1", "1"), ecg("d2", "eg2", "ECG2-2", "2")].map(
+      (c) => ({ ...c, school_year_id: "y-to" }),
+    );
+    void existingG2;
+    const proposals = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    }).filter((p) => !p.skippedReason);
+    assert.equal(proposals.length, 5);
+    assert.deepEqual(
+      proposals.map((p) => p.name).sort(),
+      ["ECG2-1", "ECG2-2", "ECG2-3", "ECG2-4", "ECG2-5"],
+    );
+    assert.ok(proposals.every((p) => p.targetGradeLevelId === "eg2"));
+  });
+
+  it("B: International 3A/3B → International 4A/4B", () => {
+    const sources = [
+      ecg("i3a", "ig3", "International 3A", "A"),
+      ecg("i3b", "ig3", "International 3B", "B"),
+    ];
+    const proposals = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    }).filter((p) => !p.skippedReason);
+    assert.deepEqual(
+      proposals.map((p) => p.name).sort(),
+      ["International 4A", "International 4B"],
+    );
+    assert.ok(proposals.every((p) => p.targetGradeLevelId === "ig4"));
+  });
+
+  it("C: Grade 5 does not scaffold Grade 6 Primary", () => {
+    const sources = [ecg("g5a", "g5", "5A", "A")];
+    const proposals = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    });
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0]!.skippedReason, "terminal_grade");
+  });
+
+  it("D: Experimental stays Experimental (no cross-stream rename)", () => {
+    const sources = [ecg("e1", "eg1", "ECG1-1", "1")];
+    const proposals = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    });
+    assert.equal(proposals[0]!.program, "experimental");
+    assert.equal(proposals[0]!.name, "ECG2-1");
+    assert.equal(proposals[0]!.targetGradeLevelId, "eg2");
+    assert.notEqual(proposals[0]!.targetGradeLevelId, "g2");
+  });
+
+  it("E: Capacity check reports deficit when shells short", () => {
+    const sources = [1, 2, 3, 4, 5].map((n) =>
+      ecg(`s${n}`, "eg1", `ECG1-${n}`, String(n)),
+    );
+    const dest = [1, 2, 3, 4].map((n) => ({
+      ...ecg(`d${n}`, "eg2", `ECG2-${n}`, String(n)),
+      school_year_id: "y-to",
+    }));
+    const rows = summarizeCohortCapacity({
+      sourceClasses: sources,
+      destinationClasses: dest,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    });
+    const row = rows.find((r) => r.program === "experimental" && r.destinationGradeId === "eg2");
+    assert.ok(row);
+    assert.equal(row!.sourceCount, 5);
+    assert.equal(row!.destinationShellCount, 4);
+    assert.equal(row!.deficit, 1);
+  });
+
+  it("F: Add-shell suggestion picks next free ECG section", () => {
+    const existing = [1, 2, 3, 4].map((n) =>
+      ecg(`d${n}`, "eg2", `ECG2-${n}`, String(n)),
+    );
+    const suggestion = suggestNextShellInBucket({
+      grade: gradesById.get("eg2")!,
+      program: "experimental",
+      existingInBucket: existing,
+    });
+    assert.equal(suggestion.suggestedName, "ECG2-5");
+    assert.equal(suggestion.suggestedSection, "5");
+    assert.equal(suggestion.namingAmbiguous, false);
+  });
+
+  it("G: Intentional merges are visible as multi-source groups", () => {
+    const groups = collectIntentionalMerges({
+      maps: [
+        { fromClassId: "a", toClassId: "dest" },
+        { fromClassId: "b", toClassId: "dest" },
+        { fromClassId: "c", toClassId: "other" },
+      ],
+      fromLabelById: new Map([
+        ["a", "ECG1-3"],
+        ["b", "ECG1-4"],
+        ["c", "ECG1-5"],
+      ]),
+      toLabelById: new Map([
+        ["dest", "ECG2-4"],
+        ["other", "ECG2-5"],
+      ]),
+    });
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0]!.fromClassIds.length, 2);
+    assert.equal(groups[0]!.toClassLabel, "ECG2-4");
+  });
+
+  it("H: Mapping suggestions are 1:1 lineage (ECG1-1→ECG2-1)", () => {
+    const sources = [1, 2, 3].map((n) => ecg(`s${n}`, "eg1", `ECG1-${n}`, String(n)));
+    const dest = [1, 2, 3].map((n) => ({
+      ...ecg(`d${n}`, "eg2", `ECG2-${n}`, String(n)),
+      school_year_id: "y-to",
+    }));
+    const suggestions = suggestLineageClassMaps({
+      sourceClasses: sources,
+      destinationClasses: dest,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    });
+    assert.equal(suggestions.length, 3);
+    assert.equal(
+      suggestions.find((s) => s.fromClassId === "s1")?.toClassId,
+      "d1",
+    );
+    assert.equal(
+      suggestions.find((s) => s.fromClassId === "s2")?.toClassId,
+      "d2",
+    );
+  });
+
+  it("I: Scaffold proposals are idempotent by structure key (no duplicate names)", () => {
+    const sources = [ecg("s1", "eg1", "ECG1-1", "1")];
+    const first = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    })[0]!;
+    const key = classStructureKey(first.targetGradeLevelId, first.name, first.section);
+    const existingKeys = new Set([key]);
+    const second = proposeNextGradeShells({
+      sourceClasses: sources,
+      gradesById,
+      allGrades: gradesWithPrograms,
+    })[0]!;
+    assert.ok(
+      existingKeys.has(
+        classStructureKey(second.targetGradeLevelId, second.name, second.section),
+      ),
+    );
+  });
+
+  it("J: Ambiguous naming does not invent a shell name", () => {
+    const existing = [
+      ecg("odd1", "eg2", "Homeroom Blue", "X"),
+      ecg("odd2", "eg2", "Something Else", "Y"),
+    ];
+    const suggestion = suggestNextShellInBucket({
+      grade: gradesById.get("eg2")!,
+      program: "experimental",
+      existingInBucket: existing,
+    });
+    assert.equal(suggestion.namingAmbiguous, true);
+    assert.equal(suggestion.suggestedName, null);
   });
 });

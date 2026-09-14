@@ -1,8 +1,8 @@
 import {
   defaultDispositionForGrade,
-  findNextGradeLevel,
   isTerminalPrimaryGrade,
 } from "./grade-ladder";
+import { findNextGradeLevelForClass } from "./class-lineage";
 import { suggestDestinationClass } from "./suggest-destination";
 import type { ClassRef, GradeLevelRef, YearEndDisposition } from "./types";
 
@@ -25,7 +25,7 @@ export type DraftPlanItem = {
 
 /**
  * Build default draft items for operationally active students.
- * Uses class map when present; otherwise suggests by next grade + section.
+ * Uses class map when present; otherwise suggests by next grade + lineage.
  */
 export function buildDefaultPlanItems(args: {
   students: readonly EligibleStudentInput[];
@@ -74,13 +74,20 @@ export function buildDefaultPlanItems(args: {
         destinationGradeLevelId = dest?.grade_level_id ?? null;
       }
     } else if (sourceClass && grade) {
-      const nextGrade = findNextGradeLevel(grade, allGrades);
+      const nextGrade = findNextGradeLevelForClass({
+        current: grade,
+        all: allGrades,
+        sourceClassName: sourceClass.name,
+        sourceSection: sourceClass.section,
+      });
       destinationGradeLevelId = nextGrade?.id ?? null;
       const suggested = suggestDestinationClass({
         sourceClass,
         targetGradeLevelId: destinationGradeLevelId,
         toYearClasses,
         toSchoolYearId,
+        sourceGrade: grade,
+        targetGrade: nextGrade,
       });
       destinationClassId = suggested?.id ?? null;
     }

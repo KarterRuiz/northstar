@@ -15,6 +15,17 @@ import {
   type PreviewCounts,
   type PreviewItemInput,
 } from "./preview-validation";
+import {
+  collectIntentionalMerges,
+  summarizeCohortCapacity,
+  suggestLineageClassMaps,
+  suggestNextShellInBucket,
+  inferProgramFromText,
+  type CapacityCheckRow,
+  type ClassProgramKey,
+  type MergeGroup,
+  type SuggestedNewShell,
+} from "./class-lineage";
 import type {
   ClassRef,
   GradeLevelRef,
@@ -75,6 +86,10 @@ export type YearEndPlanSummary = {
   updatedAt: string;
 };
 
+export type YearEndAddShellOption = SuggestedNewShell & {
+  buttonLabel: string;
+};
+
 export type YearEndWorkspaceData =
   | { ok: false; message: string }
   | {
@@ -88,6 +103,11 @@ export type YearEndWorkspaceData =
       fromClasses: YearEndClassOption[];
       toClasses: YearEndClassOption[];
       classMaps: YearEndClassMapRow[];
+      mapSuggestions: { fromClassId: string; toClassId: string }[];
+      pendingSuggestionCount: number;
+      capacityRows: CapacityCheckRow[];
+      mergeGroups: MergeGroup[];
+      addShellOptions: YearEndAddShellOption[];
       items: YearEndPlanItemRow[];
       toYearTermCodes: string[];
       missingToYearTerms: string[];
@@ -235,6 +255,11 @@ export async function loadYearEndWorkspace(
       fromClasses: [],
       toClasses: [],
       classMaps: [],
+      mapSuggestions: [],
+      pendingSuggestionCount: 0,
+      capacityRows: [],
+      mergeGroups: [],
+      addShellOptions: [],
       items: [],
       toYearTermCodes: [],
       missingToYearTerms: [],
@@ -310,6 +335,58 @@ export async function loadYearEndWorkspace(
     }
   }
   classMaps.sort((a, b) => a.fromClass.label.localeCompare(b.fromClass.label));
+
+  const capacityRows = summarizeCohortCapacity({
+    sourceClasses: fromClasses,
+    destinationClasses: toClasses,
+    gradesById,
+    allGrades: gradeLevels,
+  });
+
+  const lineageSuggestions = suggestLineageClassMaps({
+    sourceClasses: fromClasses,
+    destinationClasses: toClasses,
+    gradesById,
+    allGrades: gradeLevels,
+  });
+  const mappedByFrom = new Map(classMaps.map((m) => [m.fromClassId, m.toClassId]));
+  const mapSuggestions = lineageSuggestions.filter((s) => {
+    const current = mappedByFrom.get(s.fromClassId);
+    return current == null;
+  });
+  const pendingSuggestionCount = mapSuggestions.length;
+
+  const fromLabelById = new Map(fromClasses.map((c) => [c.id, c.label]));
+  const toLabelById = new Map(toClasses.map((c) => [c.id, c.label]));
+  const mergeGroups = collectIntentionalMerges({
+    maps: classMaps.map((m) => ({
+      fromClassId: m.fromClassId,
+      toClassId: m.toClassId,
+    })),
+    fromLabelById,
+    toLabelById,
+  });
+
+  const addShellOptions: YearEndAddShellOption[] = capacityRows
+    .filter((row) => row.deficit > 0)
+    .map((row) => {
+      const grade = gradesById.get(row.destinationGradeId);
+      if (!grade) return null;
+      const existingInBucket = toClasses.filter((c) => {
+        const program = inferProgramFromText(c.name, c.section, c.gradeName);
+        return c.grade_level_id === row.destinationGradeId && program === row.program;
+      });
+      const suggestion = suggestNextShellInBucket({
+        grade,
+        program: row.program as ClassProgramKey,
+        existingInBucket,
+      });
+      return {
+        ...suggestion,
+        buttonLabel: `Add ${grade.name} ${row.programLabel} class`,
+      };
+    })
+    .filter((x): x is YearEndAddShellOption => x != null);
 
   const { data: termRows } = await supabase
     .from("terms")
@@ -492,6 +569,11 @@ export async function loadYearEndWorkspace(
     fromClasses,
     toClasses,
     classMaps,
+    mapSuggestions,
+    pendingSuggestionCount,
+    capacityRows,
+    mergeGroups,
+    addShellOptions,
     items,
     toYearTermCodes,
     missingToYearTerms,
